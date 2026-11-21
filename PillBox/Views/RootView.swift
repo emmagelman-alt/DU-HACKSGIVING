@@ -7,23 +7,45 @@ struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Query private var meds: [Medication]
     @Query private var logs: [DoseLog]
+    /// The MEDI welcome screen shows when the app opens with no medications (or with `-screen welcome`).
+    @State private var welcomePending = AppModel.launchScreen == nil || AppModel.launchScreen == "welcome"
+
+    private var showWelcome: Bool {
+        welcomePending && (meds.isEmpty || AppModel.launchScreen == "welcome")
+    }
 
     var body: some View {
         @Bindable var router = router
-        TabView(selection: $router.tab) {
-            Tab("Today", systemImage: "sun.max.fill", value: AppTab.today) { TodayView() }
-            Tab("Pill Box", systemImage: "square.grid.3x3.fill", value: AppTab.pillBox) { PillBoxView() }
-            Tab("Meds", systemImage: "pills.fill", value: AppTab.meds) { MedicationsView() }
-            Tab("Alerts", systemImage: "bell.badge.fill", value: AppTab.alerts) { AlertsView() }
-                .badge(alertCount)
+        Group {
+            if showWelcome {
+                WelcomeView {
+                    withAnimation(.easeInOut(duration: 0.35)) { welcomePending = false }
+                    Task { await ReminderService.shared.requestPermissions() }
+                }
+                .transition(.opacity)
+            } else {
+                Group {
+                    switch router.tab {
+                    case .today: TodayView()
+                    case .add: AddMedView()
+                    case .pillBox: MediPillBoxView()
+                    case .meds: InfoView()
+                    }
+                }
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    MediTabBar(tab: $router.tab)
+                }
+                .transition(.opacity)
+            }
         }
         .fullScreenCover(item: activeSlot) { slot in
             TakeMedsView(slot: slot)
         }
-        .sheet(isPresented: $router.showScanner) { ScanFlowView() }
         .sheet(isPresented: $router.showSettings) { SettingsView() }
+        .sheet(isPresented: $router.showAlerts) { AlertsView() }
         .task {
-            await ReminderService.shared.requestPermissions()
+            // On first launch, ask for alarm and notification permission after START, not over the welcome screen.
+            if !showWelcome { await ReminderService.shared.requestPermissions() }
             await ReminderService.shared.rescheduleAll(context: context)
             ScreenRoutes.apply(AppModel.launchScreen, context: context)
             checkForDueDose()
@@ -35,6 +57,15 @@ struct RootView: View {
                 Task { await ReminderService.shared.rescheduleAll(context: context) }
             }
         }
+        // "Scan a new label" buttons elsewhere in the app open the + tab.
+        .onChange(of: router.showScanner) { _, open in
+            guard open else { return }
+            router.showScanner = false
+            router.showAlerts = false
+            router.showSettings = false
+            welcomePending = false
+            router.tab = .add
+        }
         .onChange(of: meds.count) {
             Task { await ReminderService.shared.rescheduleAll(context: context) }
         }
@@ -45,12 +76,6 @@ struct RootView: View {
             get: { router.activeSlotKey.flatMap { DoseActions.slot(for: $0, context: context) } },
             set: { router.activeSlotKey = $0?.key }
         )
-    }
-
-    private var alertCount: Int {
-        let bottleWarnings = meds.flatMap(\.activeBottles).filter { ExpiryLevel.level(for: $0.expirationDate) >= .week }.count
-        let low = meds.filter { (Scheduler.daysLeft($0) ?? 99) <= 7 }.count
-        return bottleWarnings + low
     }
 
     /// If a dose is due while the app is open, cover the screen until it's confirmed or snoozed.

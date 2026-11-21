@@ -6,10 +6,10 @@ OUT=design/screens
 mkdir -p $OUT
 xcrun simctl status_bar $U override --time "9:41" --batteryState charged --batteryLevel 100 --wifiBars 3 --cellularBars 4 >/dev/null 2>&1
 i=1
-for screen in today pillbox meds med prescriber message alerts scan review take snooze settings empty; do
+for screen in today pillbox meds med prescriber message alerts scan review take snooze settings empty welcome; do
   xcrun simctl terminate $U com.emmagelman.PillBox >/dev/null 2>&1
-  if [[ $screen == empty ]]; then
-    xcrun simctl launch $U com.emmagelman.PillBox -inMemory -screen empty >/dev/null
+  if [[ $screen == empty || $screen == welcome ]]; then
+    xcrun simctl launch $U com.emmagelman.PillBox -inMemory -screen $screen >/dev/null
   else
     xcrun simctl launch $U com.emmagelman.PillBox -screen $screen >/dev/null
   fi

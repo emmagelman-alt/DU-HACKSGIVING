@@ -21,7 +21,8 @@ enum AppModel {
     }
 }
 
-enum AppTab: Hashable { case today, pillBox, meds, alerts }
+/// Home, Add (scan a bottle), Pill box and Info in the bottom bar.
+enum AppTab: Hashable { case today, add, pillBox, meds }
 
 /// App-wide navigation state, so alarms and notifications can open the right screen.
 @MainActor
@@ -35,6 +36,7 @@ final class AppRouter {
     var showSnoozeOnOpen = false
     var showScanner = false
     var showSettings = false
+    var showAlerts = false
     /// Sample label to read automatically when the scanner opens (demo and screenshots).
     var scanDemoAsset: String?
     var medsPath = NavigationPath()

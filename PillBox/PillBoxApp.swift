@@ -17,6 +17,8 @@ struct PillBoxApp: App {
             RootView()
                 .environment(router)
                 .tint(Color("AccentColor"))
+                // The MEDI redesign is light only.
+                .preferredColorScheme(.light)
         }
         .modelContainer(AppModel.container)
     }

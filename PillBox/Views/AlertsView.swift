@@ -4,6 +4,7 @@ import SwiftUI
 /// Expired and expiring bottles, and meds that are running low.
 struct AlertsView: View {
     @Environment(AppRouter.self) private var router
+    @Environment(\.dismiss) private var dismiss
     @Query(sort: \Medication.name) private var meds: [Medication]
 
     private var bottles: [(Medication, Bottle)] {
@@ -71,6 +72,7 @@ struct AlertsView: View {
                 }
             }
             .navigationTitle("Alerts")
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
             .navigationDestination(for: PrescriberMessage.self) { PrescriberMessageView(message: $0) }
         }
     }

@@ -13,11 +13,25 @@ enum DemoData {
         try? context.delete(model: Prescriber.self)
         try? context.save()
         UserDefaults.standard.removeObject(forKey: "snoozes")
+        UserDefaults.standard.removeObject(forKey: HealthProfile.key)
     }
 
     static func seed(into context: ModelContext) {
         wipe(context)
         UserDefaults.standard.set("Jordan Rivera", forKey: "patientName")
+        typealias Item = HealthProfile.Item
+        HealthProfile(
+            birthDate: Calendar.current.date(from: DateComponents(year: 1948, month: 3, day: 4)),
+            insurancePlan: "Medicare",
+            insuranceDetail: "Part A and Part B",
+            memberID: "1EG4-TE5-MK72",
+            conditions: [Item(title: "Type 2 diabetes"), Item(title: "High cholesterol"), Item(title: "High blood pressure")],
+            allergies: [Item(title: "Sulfa drugs", detail: "Rash and swelling")],
+            pastMeds: [Item(title: "Simvastatin 20 mg", detail: "Stopped 2024")],
+            emergencyName: "Alex Rivera",
+            emergencyRelation: "Son",
+            emergencyPhone: "(412) 555-0199"
+        ).save()
         let today = Calendar.current.startOfDay(for: Date())
         func day(_ offset: Int) -> Date { Calendar.current.date(byAdding: .day, value: offset, to: today)! }
 
@@ -141,7 +155,7 @@ enum ScreenRoutes {
                 router.medsPath.append(m)
                 router.medsPath.append(PrescriberMessage(medicationID: m.id, reason: .expired))
             }
-        case "alerts": router.tab = .alerts
+        case "alerts": router.showAlerts = true
         case "scan": router.showScanner = true
         case "review":
             router.scanDemoAsset = "label-levothyroxine"
