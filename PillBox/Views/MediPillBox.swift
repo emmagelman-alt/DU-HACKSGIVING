@@ -75,34 +75,22 @@ struct MedDetailCard: View {
                 .ignoresSafeArea()
                 .onTapGesture { dismiss() }
 
-            VStack(alignment: .leading, spacing: 0) {
-                Text(med.name)
-                    .font(.karla(48))
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.5)
-                    .frame(minHeight: 56, alignment: .leading)
-                    .padding(.bottom, 17)
-                line("Dosage: " + MedText.dosage(med))
-                line("Time: " + MedText.times(for: med))
-                line("Expires: " + MedText.date(expiry), color: MedText.isExpiringSoon(med) ? Medi.expiringText : .black)
-                line("Provider: " + (med.prescriber?.name ?? "x"))
-                VStack(spacing: 0) {
-                    MediButton(title: "DELETE MED", style: .stop, width: 248) { confirmDelete = true }
-                        .padding(.top, 16)
-                    MediButton(title: "GO BACK", style: .plain, width: 248) { dismiss() }
-                        .padding(.top, 26)
-                    MediButton(title: "CONTACT PROVIDER", style: .plain, width: 248, fontSize: 20) { message = contactMessage }
-                        .padding(.top, 18)
+            VStack(spacing: 16) {
+                MedNameCard(name: med.name)
+                MedDetailsCard(rowSpacing: 22, verticalPadding: 18) {
+                    MedDetailLine(text: "Dosage: " + MedText.dosage(med))
+                    MedDetailLine(text: "Time: " + MedText.times(for: med))
+                    MedDetailLine(text: "Expires: " + MedText.date(expiry),
+                                  color: MedText.isExpiringSoon(med) ? Medi.expiringText : .black)
+                    MedDetailLine(text: "Provider: " + (med.prescriber?.name ?? "x"))
                 }
-                .frame(maxWidth: .infinity)
+                VStack(spacing: 23) {
+                    MediButton(title: "DELETE MED", style: .stop) { confirmDelete = true }
+                    MediButton(title: "GO BACK", style: .plain) { dismiss() }
+                    MediButton(title: "CONTACT PROVIDER", style: .plain, fontSize: 20) { message = contactMessage }
+                }
             }
-            .foregroundStyle(.black)
-            .padding(.top, 31)
-            .padding(.bottom, 35)
-            .padding(.horizontal, 37)
-            .frame(width: 330)
-            .background(.white, in: RoundedRectangle(cornerRadius: 32, style: .continuous))
-            .padding(.bottom, 90)
+            .padding(.bottom, 60)
         }
         .confirmationDialog("Delete \(med.name)?", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("Delete", role: .destructive) { delete() }
@@ -115,15 +103,6 @@ struct MedDetailCard: View {
                     .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { message = nil } } }
             }
         }
-    }
-
-    private func line(_ text: String, color: Color = .black) -> some View {
-        Text(text)
-            .font(.karla(40))
-            .foregroundStyle(color)
-            .lineLimit(1)
-            .minimumScaleFactor(0.45)
-            .frame(height: 46, alignment: .leading)
     }
 
     private var contactMessage: PrescriberMessage { .suggested(for: med) }

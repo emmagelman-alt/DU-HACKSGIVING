@@ -39,7 +39,14 @@ struct AddMedView: View {
             }
         }
         .transition(.opacity)
-        .background(LinearGradient(colors: [Medi.welcomeTop, .white], startPoint: .top, endPoint: .bottom).ignoresSafeArea())
+        .background {
+            // The scan page is grey (#F2F2F2); the confirm and "added" pages keep their soft gradient.
+            if stage == .scan {
+                Medi.screen.ignoresSafeArea()
+            } else {
+                LinearGradient(colors: [Medi.welcomeTop, .white], startPoint: .top, endPoint: .bottom).ignoresSafeArea()
+            }
+        }
     }
 }
 
@@ -149,27 +156,27 @@ struct TakeScanView: View {
     enum CameraState { case checking, live, unavailable(String) }
 
     var body: some View {
-        VStack(spacing: 0) {
+        VStack(spacing: 16) {
+            // "Instructions card"
             Text("Place medication bottle in frame. Slowly rotate until MEDI registers all information.")
-                .font(.karla(24))
+                .font(.karla(23))
                 .foregroundStyle(.black)
                 .multilineTextAlignment(.center)
-                .frame(width: 345)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 4)
+                .frame(maxWidth: .infinity)
+                .padding(20)
+                .background(.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
 
             cameraArea
-                .frame(width: 322)
-                .frame(maxHeight: 494)
+                .frame(maxWidth: .infinity)
+                .frame(maxHeight: 395.5)
                 .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
-                .padding(.top, 16)
                 .layoutPriority(-1)
 
-            fieldList
-                .frame(width: 322, alignment: .leading)
-                .padding(.top, 14)
-                .padding(.bottom, 10)
+            scannedInfoCard
         }
+        .padding(.horizontal, 20)
+        .padding(.bottom, 16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .task { await startCamera() }
         .task {
@@ -218,7 +225,7 @@ struct TakeScanView: View {
                     LiveTextScanner { lines in session.add(lines) }
                 case .unavailable(let reason):
                     VStack(spacing: 14) {
-                        Text("(camera area)").font(.karla(32))
+                        Text("(camera area)").font(.karla(40))
                         Text(reason)
                             .font(.karla(18))
                             .foregroundStyle(Medi.inkSecondary)
@@ -279,27 +286,31 @@ struct TakeScanView: View {
         }
     }
 
-    // MARK: Fields under the camera
+    // MARK: "Scanned info card" under the camera
 
-    private var fieldList: some View {
-        VStack(alignment: .leading, spacing: 8) {
+    private var scannedInfoCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
             fieldChip(.name, text: session.has(.name) ? session.label.name : "med name", font: .karla(36))
-            HStack(alignment: .top, spacing: 8) {
-                VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 6) {
                     fieldChip(.dosage, text: "Dosage: " + (session.has(.dosage) ? MedText.dosage(session.label) : "x"))
-                    fieldChip(.time, text: "Time: " + (session.has(.time) ? MedText.times(for: session.label) : "x"))
+                    fieldChip(.time, text: "Time: " + (session.has(.time) ? MedText.times(for: session.label) : "x"), lines: 2)
                 }
-                .frame(width: 138, alignment: .leading)
-                VStack(alignment: .leading, spacing: 8) {
+                .frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .leading, spacing: 6) {
                     fieldChip(.expiration, text: "Expiration: " + (session.has(.expiration) ? MedText.date(session.label.expiration) : "x/x/x"))
                     fieldChip(.provider, text: "Provider: " + (session.has(.provider) ? session.label.prescriberName : "x"), lines: 2)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 
     /// A field turns green once it has been read from the label.
-    private func fieldChip(_ field: ScanField, text: String, font: Font = .karla(24), lines: Int = 1) -> some View {
+    private func fieldChip(_ field: ScanField, text: String, font: Font = .karla(20), lines: Int = 1) -> some View {
         let done = session.has(field)
         return Text(text)
             .font(font)
@@ -459,32 +470,26 @@ struct ConfirmInfoView: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            VStack(alignment: .leading, spacing: 0) {
-                row(.name, draft.name.isEmpty ? "med name" : draft.name, font: .karla(48), faded: draft.name.isEmpty)
-                    .padding(.bottom, 14)
+            // The name has no pencil in the design, but it can still be tapped to fix a misread.
+            Button { editing = .name } label: {
+                MedNameCard(name: draft.name.isEmpty ? "med name" : draft.name, faded: draft.name.isEmpty)
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("Double-tap to edit")
+
+            MedDetailsCard(rowSpacing: 24, verticalPadding: 19) {
                 row(.dosage, "Dosage: " + MedText.dosage(draft))
                 row(.time, "Time: " + MedText.times(draft.previewTimes))
                 row(.expiration, "Expires: " + (draft.hasExpiration ? MedText.date(draft.expiration) : "x/x/x"))
                 row(.provider, "Provider: " + (draft.prescriberName.isEmpty ? "x" : draft.prescriberName))
-                VStack(spacing: 23) {
-                    MediButton(title: "ADD TO PILLBOX", style: .go, width: 274) { onAdd() }
-                        .disabled(draft.name.trimmingCharacters(in: .whitespaces).isEmpty)
-                    MediButton(title: "GO BACK", style: .plain, width: 266) { onBack() }
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.top, 19)
             }
-            .padding(.top, 31)
-            .padding(.bottom, 40)
-            .padding(.horizontal, 24)
-            .frame(width: 330)
-            .background(.white, in: RoundedRectangle(cornerRadius: 32, style: .continuous))
 
-            Text("Tap any detail to change it.")
-                .font(.karla(18))
-                .foregroundStyle(Medi.inkSecondary)
+            VStack(spacing: 23) {
+                MediButton(title: "ADD TO PILLBOX", style: .go, width: 274) { onAdd() }
+                    .disabled(draft.name.trimmingCharacters(in: .whitespaces).isEmpty)
+                MediButton(title: "GO BACK", style: .plain, width: 266) { onBack() }
+            }
         }
-        .padding(.top, 4)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .sheet(item: $editing) { field in
             MedFieldEditor(field: field, draft: $draft)
@@ -492,18 +497,18 @@ struct ConfirmInfoView: View {
         }
     }
 
-    private func row(_ field: MedField, _ text: String, font: Font = .karla(40), faded: Bool = false) -> some View {
+    /// A detail with a pencil; tapping anywhere on the line edits it.
+    private func row(_ field: MedField, _ text: String) -> some View {
         Button { editing = field } label: {
-            Text(text)
-                .font(font)
-                .foregroundStyle(faded ? Medi.inkSecondary : .black)
-                .lineLimit(field == .name ? 2 : 1)
-                .minimumScaleFactor(0.45)
-                .padding(.leading, 13)
-                .frame(maxWidth: .infinity, minHeight: field == .name ? 56 : 46, alignment: .leading)
-                .contentShape(Rectangle())
+            HStack(spacing: 8) {
+                MedDetailLine(text: text)
+                Image("icon-edit")
+                    .accessibilityHidden(true)
+            }
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(text)
         .accessibilityHint("Double-tap to edit")
     }
 }

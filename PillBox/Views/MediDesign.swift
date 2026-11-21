@@ -209,7 +209,6 @@ struct DateBar: View {
 /// "onboarding home": Home before any medication has been added.
 struct OnboardingHomeView: View {
     @State private var day = Date()
-    private let red = Color(red: 0.93, green: 0.36, blue: 0.36)
 
     var body: some View {
         GeometryReader { geo in
@@ -225,37 +224,109 @@ struct OnboardingHomeView: View {
         .background(Medi.screen.ignoresSafeArea())
     }
 
-    /// The sun and the two red messages, placed where the design has them on the 402 × 874 screen.
+    /// Two suns with grey speech bubbles, placed where the design has them on the 402 × 874 screen.
     private var greeting: some View {
         ZStack(alignment: .topLeading) {
             Image("onboarding-sun")
                 .resizable()
                 .scaledToFit()
-                .frame(width: 136, height: 243)
-                .offset(x: 21, y: 242)
+                .frame(width: 152, height: 304)
+                .offset(x: 18, y: 203)
                 .accessibilityHidden(true)
+
+            bubble(width: 199, height: 160)
+                .offset(x: 181, y: 302)
             Text("Hi! Your medications and when to take them will appear here.")
                 .font(.karla(24, .semibold))
-                .foregroundStyle(red)
-                .frame(width: 200, alignment: .leading)
+                .foregroundStyle(Medi.ink)
+                .frame(width: 172, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
-                .offset(x: 180, y: 303)
-            Text("Click the + to upload your medications")
-                .font(.karla(36, .bold))
-                .foregroundStyle(red)
-                .frame(width: 303, alignment: .leading)
+                .offset(x: 198, y: 310)
+
+            bubble(width: 266, height: 158)
+                .offset(x: 24, y: 556)
+            Text("Click the \(Text(Image("icon-add-inline")).baselineOffset(-4)) to upload your medications")
+                .font(.karla(36, .semibold))
+                .foregroundStyle(Medi.ink)
+                .frame(width: 263, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
-                .offset(x: 83, y: 603)
+                .offset(x: 43, y: 570)
+                .accessibilityLabel("Tap the plus button below to upload your medications")
+
+            Image("onboarding-sun-wave")
+                .resizable()
+                .scaledToFill()
+                .frame(width: 169, height: 301)
+                .offset(x: 259, y: 495)
+                .accessibilityHidden(true)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .ignoresSafeArea()
         .allowsHitTesting(false)
     }
+
+    private func bubble(width: CGFloat, height: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: 22, style: .continuous)
+            .fill(Medi.compartment)
+            .frame(width: width, height: height)
+    }
 }
 
 // MARK: - Shared pieces for the add flow, pill box and Home
 
+/// The grey card with a medication's name, at the top of "confirm info page" and "pill specific view".
+struct MedNameCard: View {
+    let name: String
+    var faded = false
+
+    var body: some View {
+        Text(name)
+            .font(.karla(56))
+            .foregroundStyle(faded ? Medi.inkSecondary : .black)
+            .multilineTextAlignment(.center)
+            .lineLimit(1)
+            .minimumScaleFactor(0.45)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 24)
+            .frame(width: 330)
+            .background(Medi.nameCard, in: RoundedRectangle(cornerRadius: 32, style: .continuous))
+    }
+}
+
+/// The white card under the name card, with Dosage, Time, Expires and Provider.
+struct MedDetailsCard<Rows: View>: View {
+    var rowSpacing: CGFloat
+    var verticalPadding: CGFloat
+    @ViewBuilder var rows: Rows
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: rowSpacing) { rows }
+            .padding(.vertical, verticalPadding)
+            .padding(.leading, 15)
+            .padding(.trailing, 16)
+            .frame(width: 266, alignment: .leading)
+            .background(.white, in: RoundedRectangle(cornerRadius: 32, style: .continuous))
+    }
+}
+
+/// One line of the details card. Long values wrap to a second line before shrinking.
+struct MedDetailLine: View {
+    let text: String
+    var color: Color = .black
+
+    var body: some View {
+        Text(text)
+            .font(.karla(30))
+            .foregroundStyle(color)
+            .lineLimit(2)
+            .minimumScaleFactor(0.6)
+            .frame(maxWidth: .infinity, minHeight: 35, alignment: .leading)
+    }
+}
+
 extension Medi {
+    static let nameCard = Color(hex: 0xE0E0E0)
     static let outline = Color(hex: 0xAEB0B9)
     static let stopFill = Color(hex: 0xFFE8E8)
     static let stopStroke = Color(hex: 0xED8E8E)
@@ -295,7 +366,7 @@ struct MediButton: View {
         switch style {
         case .go: Medi.goFill
         case .stop: Medi.stopFill
-        case .plain: .white
+        case .plain: .clear   // outline only: the background shows through, as in the design
         }
     }
 
