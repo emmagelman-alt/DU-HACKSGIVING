@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-// Shared pieces of the MEDI redesign (Figma: "Main tabs UPDATED").
+// Shared pieces of the MEDI redesign (Figma: the "Color pallete" section, a recoloured "Main tabs UPDATED").
 
 extension Color {
     init(hex: UInt32) {
@@ -13,14 +13,46 @@ extension Color {
 }
 
 enum Medi {
-    static let ink = Color(hex: 0x111111)
-    static let inkSecondary = Color(hex: 0x4D4D4D)
-    static let rule = Color(hex: 0xBDBDBD)
-    static let screen = Color(hex: 0xF2F2F2)
-    static let selected = Color(hex: 0x222222)
+    /// Deep purple: all text, icons and outlines.
+    static let ink = Color(hex: 0x2A1450)
+    static let inkSecondary = Color(hex: 0x2A1450)
+    /// Dividers and the line above the tab bar.
+    static let rule = Color(hex: 0x2A1450).opacity(0.15)
+    /// Faint purple wells: the camera area, speech bubbles, the provider contact row.
+    static let well = Color(hex: 0x2A1450).opacity(0.07)
+    /// Orange: the selected tab and the selected day.
+    static let selected = Color(hex: 0xFF9F1C)
+    /// Yellow: START, ADD TO PILLBOX, Message, Call and the initials circles.
+    static let accent = Color(hex: 0xFDC420)
+    /// Green for fields the scanner has read.
     static let goFill = Color(hex: 0xECFFE0)
     static let goStroke = Color(hex: 0xB4ED8E)
-    static let welcomeTop = Color(hex: 0xFFF9F9)
+    /// The "added" tick.
+    static let addedFill = Color(hex: 0xACF492)
+    static let addedTick = Color(hex: 0x488A2C)
+    /// Top of every screen's background, fading to white.
+    static let backgroundTop = Color(hex: 0xFFEEEB)
+}
+
+/// Every MEDI screen's background: soft pink at the top fading to white.
+struct MediBackground: View {
+    var body: some View {
+        LinearGradient(colors: [Medi.backgroundTop, .white], startPoint: .top, endPoint: .bottom)
+            .ignoresSafeArea()
+    }
+}
+
+extension View {
+    /// The design's frosted glass card: 75% white, a fine white edge and a soft purple shadow.
+    func mediCard(cornerRadius: CGFloat = 32) -> some View {
+        background {
+            let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            shape
+                .fill(.white.opacity(0.75))
+                .overlay(shape.strokeBorder(.white.opacity(0.9), lineWidth: 1.5))
+                .shadow(color: Medi.ink.opacity(0.08), radius: 8, y: 4)
+        }
+    }
 }
 
 extension Font {
@@ -109,7 +141,7 @@ struct WelcomeView: View {
                     Text("WELCOME TO ").font(.karla(40)).frame(height: 40).padding(.top, 3.5)
                     Text("MEDI").font(.karla(96)).frame(height: 96).padding(.top, 25.8)
                 }
-                .foregroundStyle(.black)
+                .foregroundStyle(Medi.ink)
                 .frame(width: 319)
                 .offset(x: 38, y: 115)
                 .accessibilityElement(children: .combine)
@@ -117,31 +149,30 @@ struct WelcomeView: View {
                 Button(action: onStart) {
                     Text("START")
                         .font(.karla(32))
-                        .foregroundStyle(.black)
+                        .foregroundStyle(Medi.ink)
                         .frame(width: 274, height: 60)
-                        .background(Capsule().fill(Medi.goFill))
-                        .overlay(Capsule().strokeBorder(Medi.goStroke, lineWidth: 4))
+                        .background(Capsule().fill(Medi.accent))
                 }
                 .buttonStyle(.plain)
                 .offset(x: 64, y: 653)
             }
         }
-        .background(LinearGradient(colors: [Medi.welcomeTop, .white], startPoint: .top, endPoint: .bottom).ignoresSafeArea())
+        .background(MediBackground())
     }
 }
 
-/// "Daily Pill Summary" title at the top of Home.
+/// "DAILY PILL SUMMARY" title at the top of Home.
 struct HomeHeader: View {
     var topInset: CGFloat
 
     var body: some View {
-        Text("Daily Pill Summary")
-            .font(.karla(35, .bold))
+        Text("DAILY PILL SUMMARY")
+            .font(.karla(35, .medium))
             .foregroundStyle(Medi.ink)
             .multilineTextAlignment(.center)
             .frame(maxWidth: .infinity)
             .padding(.horizontal, 20)
-            .padding(.top, max(topInset - 12, 12))
+            .padding(.top, max(topInset, 12))
             .padding(.bottom, 4)
             .accessibilityAddTraits(.isHeader)
     }
@@ -165,9 +196,13 @@ struct DateBar: View {
         .padding(.horizontal, 4)
         .padding(.vertical, 14)
         .frame(maxWidth: .infinity)
-        .background(.white)
-        .overlay(alignment: .top) { Medi.rule.frame(height: 1.5) }
-        .overlay(alignment: .bottom) { Medi.rule.frame(height: 1.5) }
+        .background {
+            Rectangle()
+                .fill(.white.opacity(0.75))
+                .overlay(alignment: .top) { Color.white.opacity(0.9).frame(height: 1.5) }
+                .overlay(alignment: .bottom) { Color.white.opacity(0.9).frame(height: 1.5) }
+                .shadow(color: Medi.ink.opacity(0.08), radius: 8, y: 4)
+        }
     }
 
     private func arrow(_ image: String, label: String, by days: Int) -> some View {
@@ -185,7 +220,7 @@ struct DateBar: View {
             VStack(spacing: 6) {
                 Text(date.formatted(.dateTime.weekday(selected ? .wide : .abbreviated)))
                     .font(selected ? .karla(20, .bold) : .karla(17, .medium))
-                    .foregroundStyle(selected ? Medi.ink : Medi.inkSecondary)
+                    .foregroundStyle(Medi.ink)
                 Text(date.formatted(.dateTime.day()))
                     .font(selected ? .karla(36, .bold) : .karla(24, .semibold))
                     .foregroundStyle(selected ? .white : Medi.ink)
@@ -214,50 +249,50 @@ struct OnboardingHomeView: View {
         GeometryReader { geo in
             VStack(spacing: 0) {
                 HomeHeader(topInset: geo.safeAreaInsets.top)
-                DateBar(day: $day).padding(.top, 15)
+                DateBar(day: $day).padding(.top, 32)
                 Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .ignoresSafeArea(edges: .top)
         }
         .background(alignment: .topLeading) { greeting }
-        .background(Medi.screen.ignoresSafeArea())
+        .background(MediBackground())
     }
 
-    /// Two suns with grey speech bubbles, placed where the design has them on the 402 × 874 screen.
+    /// Two suns with speech bubbles, placed where the design has them on the 402 × 874 screen.
     private var greeting: some View {
         ZStack(alignment: .topLeading) {
             Image("onboarding-sun")
                 .resizable()
                 .scaledToFit()
                 .frame(width: 152, height: 304)
-                .offset(x: 18, y: 203)
+                .offset(x: 18, y: 232)
                 .accessibilityHidden(true)
 
             bubble(width: 199, height: 160)
-                .offset(x: 181, y: 302)
+                .offset(x: 181, y: 331)
             Text("Hi! Your medications and when to take them will appear here.")
                 .font(.karla(24, .semibold))
                 .foregroundStyle(Medi.ink)
                 .frame(width: 172, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
-                .offset(x: 198, y: 310)
+                .offset(x: 201, y: 338)
 
             bubble(width: 266, height: 158)
-                .offset(x: 24, y: 556)
+                .offset(x: 24, y: 585)
             Text("Click the \(Text(Image("icon-add-inline")).baselineOffset(-4)) to upload your medications")
-                .font(.karla(36, .semibold))
+                .font(.karla(36, .medium))
                 .foregroundStyle(Medi.ink)
                 .frame(width: 263, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
-                .offset(x: 43, y: 570)
+                .offset(x: 43, y: 599)
                 .accessibilityLabel("Tap the plus button below to upload your medications")
 
             Image("onboarding-sun-wave")
                 .resizable()
                 .scaledToFill()
                 .frame(width: 169, height: 301)
-                .offset(x: 259, y: 495)
+                .offset(x: 259, y: 524)
                 .accessibilityHidden(true)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -267,75 +302,114 @@ struct OnboardingHomeView: View {
 
     private func bubble(width: CGFloat, height: CGFloat) -> some View {
         RoundedRectangle(cornerRadius: 22, style: .continuous)
-            .fill(Medi.compartment)
+            .fill(Medi.well)
             .frame(width: width, height: height)
     }
 }
 
 // MARK: - Shared pieces for the add flow, pill box and Home
 
-/// The grey card with a medication's name, at the top of "confirm info page" and "pill specific view".
-struct MedNameCard: View {
+/// The tall glass card on "confirm info page" and "pill specific view": the medication's name,
+/// its details (each with a pencil) and the buttons, all in one card.
+struct MedInfoCard<Title: View, Rows: View, Buttons: View>: View {
+    var rowSpacing: CGFloat
+    var bottomPadding: CGFloat
+    @ViewBuilder var title: Title
+    @ViewBuilder var rows: Rows
+    @ViewBuilder var buttons: Buttons
+
+    var body: some View {
+        VStack(spacing: 0) {
+            title
+                .padding(.horizontal, 20)
+                .padding(.top, 24)
+            VStack(alignment: .leading, spacing: rowSpacing) { rows }
+                // The rows start 39 points in, as in the design. They run to 24 points from the right edge
+                // (the design's "x" placeholders stop at 56) so real values like "Dosage: 75 mcg" fit on one line.
+                .frame(width: 267, alignment: .leading)
+                .padding(.leading, 15)
+                .padding(.top, 58)
+            VStack(spacing: 23) { buttons }
+                .padding(.top, 34)
+        }
+        .padding(.bottom, bottomPadding)
+        .frame(width: 330)
+        .fixedSize(horizontal: false, vertical: true)   // always as tall as its rows, so wrapped rows never overlap
+        .mediCard()
+    }
+}
+
+/// The medication's name at the top of the info card.
+struct MedNameTitle: View {
     let name: String
     var faded = false
 
     var body: some View {
         Text(name)
             .font(.karla(56))
-            .foregroundStyle(faded ? Medi.inkSecondary : .black)
+            .foregroundStyle(Medi.ink.opacity(faded ? 0.45 : 1))
             .multilineTextAlignment(.center)
             .lineLimit(1)
             .minimumScaleFactor(0.45)
             .frame(maxWidth: .infinity)
-            .padding(.horizontal, 20)
-            .padding(.vertical, 24)
-            .frame(width: 330)
-            .background(Medi.nameCard, in: RoundedRectangle(cornerRadius: 32, style: .continuous))
     }
 }
 
-/// The white card under the name card, with Dosage, Time, Expires and Provider.
-struct MedDetailsCard<Rows: View>: View {
-    var rowSpacing: CGFloat
-    var verticalPadding: CGFloat
-    @ViewBuilder var rows: Rows
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: rowSpacing) { rows }
-            .padding(.vertical, verticalPadding)
-            .padding(.leading, 15)
-            .padding(.trailing, 16)
-            .frame(width: 266, alignment: .leading)
-            .background(.white, in: RoundedRectangle(cornerRadius: 32, style: .continuous))
-    }
-}
-
-/// One line of the details card. Long values wrap to a second line before shrinking.
+/// One line of the details: 30 pt on one line, else 26 pt on one line, else 30 pt wrapped onto two lines.
 struct MedDetailLine: View {
     let text: String
-    var color: Color = .black
+    var color: Color = Medi.ink
+    /// Room for the text in the info card: the 267-point row minus the pencil and its gap.
+    var width: CGFloat = 227
+
+    private var fontSize: CGFloat {
+        func fits(_ size: CGFloat) -> Bool {
+            guard let font = UIFont(name: "Karla-Regular", size: size) else { return true }
+            return (text as NSString).size(withAttributes: [.font: font]).width <= width
+        }
+        return fits(30) ? 30 : fits(26) ? 26 : 30
+    }
 
     var body: some View {
         Text(text)
-            .font(.karla(30))
+            .font(.karla(fontSize))
             .foregroundStyle(color)
             .lineLimit(2)
             .minimumScaleFactor(0.6)
+            .fixedSize(horizontal: false, vertical: true)   // wrap onto a second line rather than shrink
             .frame(maxWidth: .infinity, minHeight: 35, alignment: .leading)
     }
 }
 
+/// A detail with a pencil; tapping anywhere on the line edits it.
+struct MedEditRow: View {
+    let text: String
+    var color: Color = Medi.ink
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                MedDetailLine(text: text, color: color)
+                Image("icon-edit")
+                    .accessibilityHidden(true)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(text)
+        .accessibilityHint("Double-tap to edit")
+    }
+}
+
 extension Medi {
-    static let nameCard = Color(hex: 0xE0E0E0)
-    static let outline = Color(hex: 0xAEB0B9)
-    static let stopFill = Color(hex: 0xFFE8E8)
-    static let stopStroke = Color(hex: 0xED8E8E)
-    static let compartment = Color(hex: 0xD9D9D9)
-    static let pill = Color(hex: 0x494747)
+    /// Delete buttons and the compartment of a bottle that expires within a week.
+    static let danger = Color(hex: 0xED4D4D)
+    /// "Expires" text when the date is close.
     static let expiringText = Color(hex: 0xC93C3C)
 }
 
-/// The design's pill-shaped buttons: green (go), red (delete) and grey outline.
+/// The design's pill-shaped buttons: yellow (go), red (delete) and purple outline.
 struct MediButton: View {
     enum Style { case go, stop, plain }
     let title: String
@@ -349,13 +423,13 @@ struct MediButton: View {
         Button(action: action) {
             Text(title)
                 .font(.karla(fontSize))
-                .foregroundStyle(.black)
+                .foregroundStyle(style == .stop ? .white : Medi.ink)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
                 .padding(.horizontal, 12)
                 .frame(width: width, height: 60)
                 .background(Capsule().fill(fill))
-                .overlay(Capsule().strokeBorder(stroke, lineWidth: 4))
+                .overlay(Capsule().strokeBorder(style == .plain ? Medi.ink : .clear, lineWidth: 4))
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -364,17 +438,9 @@ struct MediButton: View {
 
     private var fill: Color {
         switch style {
-        case .go: Medi.goFill
-        case .stop: Medi.stopFill
+        case .go: Medi.accent
+        case .stop: Medi.danger
         case .plain: .clear   // outline only: the background shows through, as in the design
-        }
-    }
-
-    private var stroke: Color {
-        switch style {
-        case .go: Medi.goStroke
-        case .stop: Medi.stopStroke
-        case .plain: Medi.outline
         }
     }
 }
@@ -392,20 +458,41 @@ enum MedText {
     static func dosage(_ d: MedDraft) -> String { dosage(strength: d.strength, pills: d.pillsPerDose, form: d.form) }
     static func dosage(_ m: Medication) -> String { dosage(strength: m.strength, pills: m.pillsPerDose, form: m.form) }
 
-    /// "8 AM", "8:30 PM"
+    /// "8 AM", "8:30 PM" (a no-break space, so a time never splits across two lines)
     static func time(_ minutes: Int) -> String {
         let h = (minutes / 60) % 24, m = minutes % 60
         let hour12 = h % 12 == 0 ? 12 : h % 12
         let suffix = h < 12 ? "AM" : "PM"
-        return m == 0 ? "\(hour12) \(suffix)" : String(format: "%d:%02d %@", hour12, m, suffix)
+        return m == 0 ? "\(hour12)\u{00A0}\(suffix)" : String(format: "%d:%02d\u{00A0}%@", hour12, m, suffix)
     }
 
     static func times(_ minutes: [Int]) -> String {
-        minutes.isEmpty ? "as needed" : minutes.sorted().map(time).joined(separator: ", ")
+        minutes.isEmpty ? "As needed" : minutes.sorted().map(time).joined(separator: ", ")
     }
 
-    static func times(for label: ParsedLabel) -> String { times(MedDraft(parsed: label).previewTimes) }
-    static func times(for med: Medication) -> String { times(Scheduler.times(for: med)) }
+    /// "Morning, Evening" when no exact time was set; "8 AM, 8:30 PM" when one was.
+    /// (Reminders for a part of the day still ring at that part's time from Settings.)
+    static func times(for med: Medication) -> String {
+        switch med.frequency {
+        case .asNeeded:
+            return "As needed"
+        case .everyHours where med.customTimes.isEmpty && med.intervalHours > 0:
+            return "Every \(med.intervalHours) hours"
+        default:
+            let minutes = Scheduler.times(for: med)
+            guard med.customTimes.isEmpty, !minutes.isEmpty else { return times(minutes) }
+            let parts = Set(minutes.map(DayPart.containing))
+            return DayPart.allCases.filter(parts.contains).map(\.title).joined(separator: ", ")
+        }
+    }
+
+    static func times(for draft: MedDraft) -> String {
+        let m = Medication(name: draft.name, strength: draft.strength)
+        draft.apply(to: m)
+        return times(for: m)
+    }
+
+    static func times(for label: ParsedLabel) -> String { times(for: MedDraft(parsed: label)) }
 
     /// "12/16/26"
     static func date(_ date: Date?) -> String {

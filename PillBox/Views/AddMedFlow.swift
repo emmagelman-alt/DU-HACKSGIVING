@@ -39,14 +39,7 @@ struct AddMedView: View {
             }
         }
         .transition(.opacity)
-        .background {
-            // The scan page is grey (#F2F2F2); the confirm and "added" pages keep their soft gradient.
-            if stage == .scan {
-                Medi.screen.ignoresSafeArea()
-            } else {
-                LinearGradient(colors: [Medi.welcomeTop, .white], startPoint: .top, endPoint: .bottom).ignoresSafeArea()
-            }
-        }
+        .background(MediBackground())
     }
 }
 
@@ -181,12 +174,12 @@ struct TakeScanView: View {
             // "Instructions card"
             Text("Place medication bottle in frame. Slowly rotate until MEDI registers all information.")
                 .font(.karla(23))
-                .foregroundStyle(.black)
+                .foregroundStyle(Medi.ink)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity)
-                .padding(20)
-                .background(.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .padding(22)
+                .mediCard(cornerRadius: 20)
 
             cameraArea
                 .frame(maxWidth: .infinity)
@@ -239,7 +232,7 @@ struct TakeScanView: View {
 
     @ViewBuilder private var cameraArea: some View {
         ZStack {
-            Color(hex: 0xD9D9D9)
+            Medi.well
             if let stillImage {
                 PanningLabel(image: stillImage)
                     .id(ObjectIdentifier(stillImage))
@@ -260,6 +253,7 @@ struct TakeScanView: View {
                             .padding(.horizontal, 24)
                         sourceMenu(label: "Try a sample label")
                     }
+                    .foregroundStyle(Medi.ink)
                 }
             }
         }
@@ -339,11 +333,10 @@ struct TakeScanView: View {
             if let label {
                 Text(label)
                     .font(.karla(20, .medium))
-                    .foregroundStyle(.black)
+                    .foregroundStyle(Medi.ink)
                     .padding(.horizontal, 22)
                     .frame(height: 48)
-                    .background(Capsule().fill(Medi.goFill))
-                    .overlay(Capsule().strokeBorder(Medi.goStroke, lineWidth: 3))
+                    .background(Capsule().fill(Medi.accent))
             } else {
                 Image(systemName: "photo.on.rectangle")
                     .font(.system(size: 17, weight: .semibold))
@@ -373,9 +366,9 @@ struct TakeScanView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .padding(20)
+        .padding(22)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .mediCard(cornerRadius: 20)
     }
 
     /// A field turns green once it has been read from the label.
@@ -383,7 +376,7 @@ struct TakeScanView: View {
         let done = session.has(field)
         return Text(text)
             .font(font)
-            .foregroundStyle(.black)
+            .foregroundStyle(Medi.ink)
             .lineLimit(lines)
             .minimumScaleFactor(0.6)
             .padding(.horizontal, 6)
@@ -554,47 +547,28 @@ struct ConfirmInfoView: View {
     @State private var editing: MedField?
 
     var body: some View {
-        VStack(spacing: 16) {
+        MedInfoCard(rowSpacing: 24, bottomPadding: 28) {
             // The name has no pencil in the design, but it can still be tapped to fix a misread.
             Button { editing = .name } label: {
-                MedNameCard(name: draft.name.isEmpty ? "med name" : draft.name, faded: draft.name.isEmpty)
+                MedNameTitle(name: draft.name.isEmpty ? "med name" : draft.name, faded: draft.name.isEmpty)
             }
             .buttonStyle(.plain)
             .accessibilityHint("Double-tap to edit")
-
-            MedDetailsCard(rowSpacing: 24, verticalPadding: 19) {
-                row(.dosage, "Dosage: " + MedText.dosage(draft))
-                row(.time, "Time: " + MedText.times(draft.previewTimes))
-                row(.expiration, "Expires: " + (draft.hasExpiration ? MedText.date(draft.expiration) : "x/x/x"))
-                row(.provider, "Provider: " + (draft.prescriberName.isEmpty ? "x" : draft.prescriberName))
-            }
-
-            VStack(spacing: 23) {
-                MediButton(title: "ADD TO PILLBOX", style: .go, width: 274) { onAdd() }
-                    .disabled(draft.name.trimmingCharacters(in: .whitespaces).isEmpty)
-                MediButton(title: "GO BACK", style: .plain, width: 266) { onBack() }
-            }
+        } rows: {
+            MedEditRow(text: "Dosage: " + MedText.dosage(draft)) { editing = .dosage }
+            MedEditRow(text: "Time: " + MedText.times(for: draft)) { editing = .time }
+            MedEditRow(text: "Expires: " + (draft.hasExpiration ? MedText.date(draft.expiration) : "x/x/x")) { editing = .expiration }
+            MedEditRow(text: "Provider: " + (draft.prescriberName.isEmpty ? "x" : draft.prescriberName)) { editing = .provider }
+        } buttons: {
+            MediButton(title: "ADD TO PILLBOX", style: .go, width: 306) { onAdd() }
+                .disabled(draft.name.trimmingCharacters(in: .whitespaces).isEmpty)
+            MediButton(title: "GO BACK", style: .plain, width: 306) { onBack() }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .sheet(item: $editing) { field in
             MedFieldEditor(field: field, draft: $draft)
                 .presentationDetents(field == .time || field == .dosage ? [.medium, .large] : [.medium])
         }
-    }
-
-    /// A detail with a pencil; tapping anywhere on the line edits it.
-    private func row(_ field: MedField, _ text: String) -> some View {
-        Button { editing = field } label: {
-            HStack(spacing: 8) {
-                MedDetailLine(text: text)
-                Image("icon-edit")
-                    .accessibilityHidden(true)
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(text)
-        .accessibilityHint("Double-tap to edit")
     }
 }
 
@@ -603,7 +577,7 @@ enum MedField: String, Identifiable {
     var id: String { rawValue }
 }
 
-/// Edits one line of the confirm page.
+/// Edits one line of the confirm page or of a saved medication's card.
 struct MedFieldEditor: View {
     let field: MedField
     @Binding var draft: MedDraft
@@ -634,18 +608,7 @@ struct MedFieldEditor: View {
                         Text("This drawing shows on the pill's compartment in your pill box.")
                     }
                 case .time:
-                    Section {
-                        ForEach(draft.exactTimes.indices, id: \.self) { i in
-                            DatePicker("Dose \(i + 1)", selection: $draft.exactTimes[i], displayedComponents: .hourAndMinute)
-                        }
-                        .onDelete { draft.exactTimes.remove(atOffsets: $0) }
-                        Button("Add a time") {
-                            let last = draft.exactTimes.last.map { ClockText.minutes(of: $0) } ?? 8 * 60
-                            draft.exactTimes.append(ClockText.date(Date(), minutes: min(last + 4 * 60, 22 * 60)))
-                        }
-                    } footer: {
-                        Text("MEDI reminds you at each of these times every day.")
-                    }
+                    timeEditor
                 case .expiration:
                     DatePicker("Expires", selection: Binding(get: { draft.expiration }, set: { draft.expiration = $0; draft.hasExpiration = true }),
                                displayedComponents: .date)
@@ -659,14 +622,127 @@ struct MedFieldEditor: View {
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
         }
         .onAppear {
-            // Switch to exact times the first time the schedule is edited, starting from what was read.
-            if field == .time, !draft.useExactTimes {
-                draft.exactTimes = draft.previewTimes.map { ClockText.date(Date(), minutes: $0) }
-                if draft.exactTimes.isEmpty { draft.exactTimes = [ClockText.date(Date(), minutes: 8 * 60)] }
-                draft.frequency = .daily
-                draft.useExactTimes = true
+            guard field == .time, startMode == nil else { return }
+            startMode = timeMode.wrappedValue
+            // Show the parts of the day the reminders actually fall in.
+            if startMode == .parts { timeMode.wrappedValue = .parts }
+        }
+    }
+
+    // MARK: Time
+
+    /// Parts of the day (no exact time), exact clock times, or the label's own rule.
+    enum TimeMode: Hashable { case parts, exact, interval, asNeeded }
+
+    @State private var startMode: TimeMode?
+
+    @ViewBuilder private var timeEditor: some View {
+        Section {
+            Picker("Remind me", selection: timeMode) {
+                Text("Part of day").tag(TimeMode.parts)
+                Text("Exact time").tag(TimeMode.exact)
+                if startMode == .interval { Text("Every \(draft.intervalHours) h").tag(TimeMode.interval) }
+                if startMode == .asNeeded { Text("As needed").tag(TimeMode.asNeeded) }
+            }
+            .pickerStyle(.segmented)
+        }
+        switch timeMode.wrappedValue {
+        case .parts:
+            Section {
+                dayPartGrid
+            } footer: {
+                let parts = DayPart.allCases.filter(draft.dayParts.contains)
+                let times = parts.map { "\(MedText.time(DayPartTimes.minutes(for: $0))) (\($0.title.lowercased()))" }
+                Text("Reminders ring at \(ListFormatter.localizedString(byJoining: times)). You can change these times in Settings.")
+            }
+        case .exact:
+            Section {
+                ForEach(draft.exactTimes.indices, id: \.self) { i in
+                    DatePicker("Dose \(i + 1)", selection: $draft.exactTimes[i], displayedComponents: .hourAndMinute)
+                }
+                .onDelete { if draft.exactTimes.count > 1 { draft.exactTimes.remove(atOffsets: $0) } }
+                Button("Add a time") {
+                    let last = draft.exactTimes.last.map { ClockText.minutes(of: $0) } ?? 8 * 60
+                    draft.exactTimes.append(ClockText.date(Date(), minutes: min(last + 4 * 60, 22 * 60)))
+                }
+            } footer: {
+                Text("MEDI reminds you at each of these times every day.")
+            }
+        case .interval:
+            Section {
+                Stepper("Every \(draft.intervalHours) hours", value: $draft.intervalHours, in: 2...24)
+            } footer: {
+                Text("From the label. MEDI spaces the doses through the day.")
+            }
+        case .asNeeded:
+            Section {
+                Text("No reminders. Take it when you need it.")
             }
         }
+    }
+
+    private var timeMode: Binding<TimeMode> {
+        Binding(get: {
+            if draft.useExactTimes { return .exact }
+            switch draft.frequency {
+            case .daily: return .parts
+            case .everyHours: return .interval
+            case .asNeeded: return .asNeeded
+            }
+        }, set: { mode in
+            // Start from wherever the reminders fall now.
+            let current = draft.previewTimes
+            switch mode {
+            case .parts:
+                let parts = Set(current.map(DayPart.containing))
+                draft.dayParts = parts.isEmpty ? [.morning] : parts
+                draft.timesPerDay = draft.dayParts.count
+                draft.useExactTimes = false
+                draft.frequency = .daily
+            case .exact:
+                if !draft.useExactTimes {
+                    draft.exactTimes = (current.isEmpty ? [8 * 60] : current).map { ClockText.date(Date(), minutes: $0) }
+                }
+                draft.useExactTimes = true
+                draft.frequency = .daily
+            case .interval:
+                draft.useExactTimes = false
+                draft.frequency = .everyHours
+            case .asNeeded:
+                draft.useExactTimes = false
+                draft.frequency = .asNeeded
+            }
+        })
+    }
+
+    /// Morning, Afternoon, Evening and Night; pick one or more.
+    private var dayPartGrid: some View {
+        LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible())], spacing: 10) {
+            ForEach(DayPart.allCases) { part in
+                let on = draft.dayParts.contains(part)
+                Button {
+                    if on {
+                        if draft.dayParts.count > 1 { draft.dayParts.remove(part) }
+                    } else {
+                        draft.dayParts.insert(part)
+                    }
+                    draft.timesPerDay = draft.dayParts.count
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: part.symbol)
+                        Text(part.title).font(.karla(19, .semibold))
+                    }
+                    .foregroundStyle(Medi.ink)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(on ? Medi.selected : Medi.well, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(part.title)
+                .accessibilityAddTraits(on ? .isSelected : [])
+            }
+        }
+        .padding(.vertical, 4)
     }
 
     /// Every shape as a small line drawing; the chosen one is outlined.
@@ -682,7 +758,7 @@ struct MedFieldEditor: View {
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 6)
-                    .background(shape == current ? Medi.compartment : .clear, in: RoundedRectangle(cornerRadius: 12))
+                    .background(shape == current ? Medi.well : .clear, in: RoundedRectangle(cornerRadius: 12))
                     .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(shape == current ? Medi.ink : .clear, lineWidth: 2))
                 }
                 .buttonStyle(.plain)
@@ -714,14 +790,13 @@ struct MedAddedView: View {
     var body: some View {
         VStack(spacing: 0) {
             Circle()
-                .fill(Medi.goFill)
-                .overlay(Circle().strokeBorder(Medi.goStroke, lineWidth: 4))
-                .overlay(Image(systemName: "checkmark").font(.system(size: 26, weight: .bold)).foregroundStyle(Color(hex: 0x5BA832)))
+                .fill(Medi.addedFill)
+                .overlay(Image(systemName: "checkmark").font(.system(size: 26, weight: .bold)).foregroundStyle(Medi.addedTick))
                 .frame(width: 63, height: 60)
                 .accessibilityHidden(true)
             Text("\(name)\nAdded to\npillbox")
                 .font(.karla(48))
-                .foregroundStyle(.black)
+                .foregroundStyle(Medi.ink)
                 .multilineTextAlignment(.center)
                 .lineSpacing(-4)
                 .minimumScaleFactor(0.6)
@@ -736,7 +811,7 @@ struct MedAddedView: View {
         .padding(.top, 29)
         .padding(.bottom, 50)
         .frame(width: 330)
-        .background(.white, in: RoundedRectangle(cornerRadius: 32, style: .continuous))
+        .mediCard()
         .padding(.top, 4)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
@@ -800,5 +875,28 @@ enum MedSaver {
         try? context.save()
         Task { await ReminderService.shared.rescheduleAll(context: context) }
         return med
+    }
+    /// Saves changes made with the pencils on a saved medication's card ("pill specific view").
+    static func saveEdits(_ draft: MedDraft, to med: Medication, context: ModelContext) {
+        guard !draft.name.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        draft.apply(to: med)
+        // The date shown on the card is the current bottle's.
+        let bottle = med.activeBottles.first
+            ?? med.bottles.max { ($0.expirationDate ?? .distantPast) < ($1.expirationDate ?? .distantPast) }
+        if draft.hasExpiration { bottle?.expirationDate = draft.expiration }
+
+        let doctor = draft.prescriberName.trimmingCharacters(in: .whitespaces)
+        if !doctor.isEmpty, med.prescriber?.name.caseInsensitiveCompare(doctor) != .orderedSame {
+            let prescribers = (try? context.fetch(FetchDescriptor<Prescriber>())) ?? []
+            if let existing = prescribers.first(where: { $0.name.caseInsensitiveCompare(doctor) == .orderedSame }) {
+                med.prescriber = existing
+            } else {
+                let p = Prescriber(name: doctor)
+                context.insert(p)
+                med.prescriber = p
+            }
+        }
+        try? context.save()
+        Task { await ReminderService.shared.rescheduleAll(context: context) }
     }
 }

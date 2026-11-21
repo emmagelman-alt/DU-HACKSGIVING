@@ -21,9 +21,9 @@ struct MediPillBoxView: View {
                             .accessibilityValue([med.pillDescription, MedText.isExpiringSoon(med) ? "Expiring soon" : ""]
                                 .filter { !$0.isEmpty }.joined(separator: ". "))
                     } else {
-                        RoundedRectangle(cornerRadius: 32, style: .continuous)
-                            .fill(Medi.compartment.opacity(0.55))
+                        Color.clear
                             .frame(width: 155, height: 155)
+                            .mediCard()
                             .accessibilityHidden(true)
                     }
                 }
@@ -32,7 +32,7 @@ struct MediPillBoxView: View {
             .padding(.top, 26)
             .padding(.bottom, 20)
         }
-        .background(LinearGradient(colors: [Medi.welcomeTop, .white], startPoint: .top, endPoint: .bottom).ignoresSafeArea())
+        .background(MediBackground())
         .fullScreenCover(item: $selected) { med in
             MedDetailCard(med: med)
                 .presentationBackground(.ultraThinMaterial)
@@ -40,106 +40,88 @@ struct MediPillBoxView: View {
     }
 
     private func compartment(_ med: Medication) -> some View {
-        VStack(spacing: 0) {
+        let expiring = MedText.isExpiringSoon(med)
+        return VStack(spacing: 0) {
             // A line drawing of the pill itself: its shape, score line and imprint from the label.
-            PillOutline(med: med, size: 100)
+            PillOutline(med: med, size: 100, fill: Medi.ink.opacity(expiring ? 0.2 : 0.12))
                 .padding(.top, 10)
             Text(med.name)
                 .font(.karla(24))
-                .foregroundStyle(.black)
+                .foregroundStyle(Medi.ink)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
                 .padding(.horizontal, 10)
             Spacer(minLength: 0)
         }
         .frame(width: 155, height: 155)
-        .background(MedText.isExpiringSoon(med) ? Medi.stopStroke : Medi.compartment,
-                    in: RoundedRectangle(cornerRadius: 32, style: .continuous))
+        .background {
+            // Glass, or solid red when a bottle expires within a week.
+            if expiring { RoundedRectangle(cornerRadius: 32, style: .continuous).fill(Medi.danger) }
+        }
+        .mediCard()
     }
 }
 
-/// "pill specific view": the medication's details over the blurred pill box.
+/// "pill specific view": the medication's details in one glass card over the blurred pill box.
+/// Each detail has a pencil and can be changed here.
 struct MedDetailCard: View {
     let med: Medication
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
+    @AppStorage("patientName") private var patientName = ""
     @State private var confirmDelete = false
-    @State private var message: PrescriberMessage?
-    @State private var editingProvider = false
+    @State private var contact: RefillRequest?
+    @State private var editing: MedField?
+    @State private var draft = MedDraft(parsed: ParsedLabel())
 
     private var expiry: Date? { med.activeBottles.first?.expirationDate ?? med.bottles.compactMap(\.expirationDate).max() }
 
     var body: some View {
         ZStack {
-            Color(hex: 0xD9D9D9).opacity(0.2)
+            Color.white.opacity(0.4)
                 .ignoresSafeArea()
                 .onTapGesture { dismiss() }
 
-            VStack(spacing: 16) {
-                MedNameCard(name: med.name)
-                MedDetailsCard(rowSpacing: 22, verticalPadding: 18) {
-                    MedDetailLine(text: "Dosage: " + MedText.dosage(med))
-                    MedDetailLine(text: "Time: " + MedText.times(for: med))
-                    MedDetailLine(text: "Expires: " + MedText.date(expiry),
-                                  color: MedText.isExpiringSoon(med) ? Medi.expiringText : .black)
-                    MedDetailLine(text: "Provider: " + (med.prescriber?.name ?? "x"))
-                }
-                VStack(spacing: 23) {
-                    MediButton(title: "DELETE MED", style: .stop) { confirmDelete = true }
-                    MediButton(title: "GO BACK", style: .plain) { dismiss() }
-                    VStack(spacing: 8) {
-                        MediButton(title: "CONTACT PROVIDER", style: .plain, fontSize: 20) { message = contactMessage }
-                            .disabled(!canContact)
-                        if !canContact { contactHint }
-                    }
+            MedInfoCard(rowSpacing: 22, bottomPadding: 31) {
+                Button { edit(.name) } label: { MedNameTitle(name: med.name) }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Double-tap to edit")
+            } rows: {
+                MedEditRow(text: "Dosage: " + MedText.dosage(med)) { edit(.dosage) }
+                MedEditRow(text: "Time: " + MedText.times(for: med)) { edit(.time) }
+                MedEditRow(text: "Expires: " + MedText.date(expiry),
+                           color: MedText.isExpiringSoon(med) ? Medi.expiringText : Medi.ink) { edit(.expiration) }
+                MedEditRow(text: "Provider: " + (med.prescriber?.name ?? "x")) { edit(.provider) }
+            } buttons: {
+                MediButton(title: "DELETE MED", style: .stop) { confirmDelete = true }
+                MediButton(title: "GO BACK", style: .plain) { dismiss() }
+                // Text or Email, with the refill request written and the To field left blank.
+                MediButton(title: "CONTACT PROVIDER", style: .plain, fontSize: 20) {
+                    contact = PrescriberMessage.suggested(for: med).request(for: med, patientName: patientName)
                 }
             }
-            .padding(.bottom, 60)
+            .padding(.bottom, 36)
         }
-        .sheet(isPresented: $editingProvider) {
-            if let p = med.prescriber {
-                NavigationStack {
-                    PrescriberEditView(prescriber: p)
-                        .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { editingProvider = false } } }
-                }
-            }
+        .sheet(item: $editing, onDismiss: { MedSaver.saveEdits(draft, to: med, context: context) }) { field in
+            MedFieldEditor(field: field, draft: $draft)
+                .presentationDetents(field == .time || field == .dosage ? [.medium, .large] : [.medium])
         }
         .confirmationDialog("Delete \(med.name)?", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("Delete", role: .destructive) { delete() }
         } message: {
             Text("This removes it from your pill box, stops its reminders and lists it under Past medications on the Info tab.")
         }
-        .sheet(item: $message) { msg in
-            NavigationStack {
-                PrescriberMessageView(message: msg)
-                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { message = nil } } }
-            }
-        }
+        .refillComposer($contact)
     }
 
-    private var contactMessage: PrescriberMessage { .suggested(for: med) }
-
-    /// Greyed out until the provider has a phone number or email to send to.
-    private var canContact: Bool { med.prescriber?.hasContact ?? false }
-
-    @ViewBuilder private var contactHint: some View {
-        if let p = med.prescriber {
-            Button { editingProvider = true } label: {
-                Text("Add a phone or email for \(p.name)")
-                    .font(.karla(17, .bold))
-                    .underline()
-                    .foregroundStyle(Medi.ink)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(width: 266)
-            }
-            .buttonStyle(.plain)
-        } else {
-            Text("No provider on this label")
-                .font(.karla(17))
-                .foregroundStyle(Medi.inkSecondary)
-                .frame(width: 266)
-        }
+    /// Opens the same editor the confirm page uses, filled in from the saved medication.
+    private func edit(_ field: MedField) {
+        var d = MedDraft(med: med)
+        d.hasExpiration = expiry != nil
+        if let expiry { d.expiration = expiry }
+        d.prescriberName = med.prescriber?.name ?? ""
+        draft = d
+        editing = field
     }
 
     private func delete() {

@@ -65,17 +65,20 @@ struct PillOutline: View {
     var imprint = ""
     var size: CGFloat = 96
     var color: Color = Medi.ink
+    /// A light wash inside the outline (the pill box uses the palette's lavender).
+    var fill: Color?
 
-    init(shape: PillShape, scored: Bool = false, imprint: String = "", size: CGFloat = 96, color: Color = Medi.ink) {
+    init(shape: PillShape, scored: Bool = false, imprint: String = "", size: CGFloat = 96, color: Color = Medi.ink, fill: Color? = nil) {
         self.shape = shape
         self.scored = scored
         self.imprint = imprint
         self.size = size
         self.color = color
+        self.fill = fill
     }
 
-    init(med: Medication, size: CGFloat = 96, color: Color = Medi.ink) {
-        self.init(shape: med.pillLook, scored: med.pillScored, imprint: med.pillImprint, size: size, color: color)
+    init(med: Medication, size: CGFloat = 96, color: Color = Medi.ink, fill: Color? = nil) {
+        self.init(shape: med.pillLook, scored: med.pillScored, imprint: med.pillImprint, size: size, color: color, fill: fill)
     }
 
     var body: some View {
@@ -97,6 +100,7 @@ struct PillOutline: View {
             }
 
             let geo = PillGeometry(shape: shape, center: c, size: s)
+            if let fill { g.fill(geo.outline, with: .color(fill)) }
             g.stroke(geo.outline, with: ink, style: bold)
             if let inner = geo.bevel { g.stroke(inner, with: faint, style: thin) }
             for extra in geo.details { g.stroke(extra, with: ink, style: thin) }
@@ -310,7 +314,7 @@ private struct PillGeometry {
         ForEach(PillShape.allCases) { shape in
             VStack {
                 PillOutline(shape: shape, scored: [.round, .oval, .oblong].contains(shape), imprint: shape == .round ? "10" : "")
-                    .background(Medi.compartment, in: RoundedRectangle(cornerRadius: 20))
+                    .background(Medi.well, in: RoundedRectangle(cornerRadius: 20))
                 Text(shape.title).font(.karla(14))
             }
         }

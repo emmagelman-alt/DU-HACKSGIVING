@@ -61,6 +61,7 @@ struct InfoView: View {
     @AppStorage(HealthProfile.key) private var profileData = Data()
     @State private var editing = false
     @State private var selectedMed: Medication?
+    @State private var contact: RefillRequest?
 
     private var profile: HealthProfile { HealthProfile.decode(profileData) }
 
@@ -88,14 +89,15 @@ struct InfoView: View {
                 .padding(.bottom, 20)
             }
             // Keeps scrolled cards from showing behind the clock and battery.
-            .safeAreaInset(edge: .top, spacing: 0) { Color.clear.frame(height: 0).background(Medi.screen) }
-            .background(Medi.screen.ignoresSafeArea())
+            .safeAreaInset(edge: .top, spacing: 0) { Color.clear.frame(height: 0).background(Medi.backgroundTop) }
+            .background(MediBackground())
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: Medication.self) { MedicationDetailView(med: $0) }
             .navigationDestination(for: Prescriber.self) { PrescriberEditView(prescriber: $0) }
             .navigationDestination(for: PrescriberMessage.self) { PrescriberMessageView(message: $0) }
         }
         .sheet(isPresented: $editing) { ProfileEditView() }
+        .refillComposer($contact)
         .fullScreenCover(item: $selectedMed) { med in
             MedDetailCard(med: med)
                 .presentationBackground(.ultraThinMaterial)
@@ -122,7 +124,7 @@ struct InfoView: View {
             }
             .padding(20)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.white, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .mediCard(cornerRadius: 24)
             .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         }
         .buttonStyle(.plain)
@@ -173,83 +175,51 @@ struct InfoView: View {
                     .foregroundStyle(Medi.inkSecondary)
             }
             ForEach(prescribers) { p in
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack(spacing: 14) {
-                        NavigationLink(value: p) {
-                            HStack(spacing: 14) {
-                                InitialsCircle(name: p.name, size: 52, fontSize: 20)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(p.name)
-                                        .font(.karla(21, .semibold))
-                                        .foregroundStyle(Medi.ink)
-                                        .lineLimit(2)
+                HStack(spacing: 14) {
+                    NavigationLink(value: p) {
+                        HStack(spacing: 14) {
+                            InitialsCircle(name: p.name, size: 52, fontSize: 20)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(p.name)
+                                    .font(.karla(21, .semibold))
+                                    .foregroundStyle(Medi.ink)
+                                    .lineLimit(2)
+                                    .minimumScaleFactor(0.8)
+                                if !p.practice.isEmpty {
+                                    Text(p.practice)
+                                        .font(.karla(16))
+                                        .foregroundStyle(Medi.inkSecondary)
+                                        .lineLimit(1)
                                         .minimumScaleFactor(0.8)
-                                    if !p.practice.isEmpty {
-                                        Text(p.practice)
-                                            .font(.karla(16))
-                                            .foregroundStyle(Medi.inkSecondary)
-                                            .lineLimit(1)
-                                            .minimumScaleFactor(0.8)
-                                    }
                                 }
-                                .frame(maxWidth: .infinity, alignment: .leading)
                             }
-                            .contentShape(Rectangle())
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    if let message = PrescriberMessage.suggested(for: p),
+                       let med = meds.first(where: { $0.id == message.medicationID }) {
+                        // Asks Text or Email, then opens it with the request written and the To field blank.
+                        Button { contact = message.request(for: med, patientName: patientName) } label: {
+                            HStack(spacing: 8) {
+                                Image("icon-msg")
+                                Text("Message").font(.karla(17, .bold))
+                            }
+                            .foregroundStyle(Medi.ink)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 12)
+                            .background(Medi.accent, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                         }
                         .buttonStyle(.plain)
-                        if let message = PrescriberMessage.suggested(for: p) {
-                            Button { router.medsPath.append(message) } label: {
-                                HStack(spacing: 8) {
-                                    Image("icon-msg")
-                                    Text("Message").font(.karla(17, .bold))
-                                }
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 12)
-                                .background(Medi.selected, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                            }
-                            .buttonStyle(.plain)
-                            // Nothing to send to until there's a phone number or email.
-                            .disabled(!p.hasContact)
-                            .opacity(p.hasContact ? 1 : 0.3)
-                            .accessibilityLabel("Message \(p.name)")
-                            .accessibilityHint(p.hasContact ? "" : "Add a phone number or email first")
-                        }
+                        .accessibilityLabel("Message \(p.name)")
                     }
-                    contactRow(p)
                 }
             }
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-    }
-
-    /// The provider's phone and email, or a button to add them.
-    private func contactRow(_ p: Prescriber) -> some View {
-        Button { router.medsPath.append(p) } label: {
-            HStack(spacing: 10) {
-                Image(systemName: p.hasContact ? "phone" : "plus.circle")
-                    .font(.system(size: 17, weight: .semibold))
-                    .frame(width: 22)
-                Text(p.hasContact ? p.contactLine : "Add phone or email")
-                    .font(.karla(18, p.hasContact ? .regular : .bold))
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.8)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Image(systemName: "pencil")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Medi.inkSecondary)
-            }
-            .foregroundStyle(Medi.ink)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .background(Medi.screen, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(p.hasContact ? "Contact info for \(p.name): \(p.contactLine)" : "Add a phone number or email for \(p.name)")
-        .accessibilityHint("Edit contact info")
+        .mediCard(cornerRadius: 20)
     }
 
     private var pharmacyCard: some View {
@@ -298,17 +268,17 @@ struct InfoView: View {
                     if !digits.isEmpty { Image("icon-phone") }
                     Text(digits.isEmpty ? "Add a contact" : "Call").font(.karla(22, .bold))
                 }
-                .foregroundStyle(.white)
+                .foregroundStyle(Medi.ink)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 18)
-                .background(Medi.selected, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .background(Medi.accent, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
             .buttonStyle(.plain)
             .accessibilityLabel(digits.isEmpty ? "Add an emergency contact" : "Call \(p.emergencyName)")
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .mediCard(cornerRadius: 20)
     }
 
     /// Not in the Figma frame: the old Info tab's settings and alerts need a home.
@@ -365,7 +335,7 @@ private struct InfoCard<Content: View>: View {
         .padding(.horizontal, 20 + border)
         .padding(.bottom, 8 + border)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .mediCard(cornerRadius: 20)
         .overlay {
             if outlined {
                 RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(Medi.ink, lineWidth: border)
@@ -402,7 +372,7 @@ private struct InfoRow: View {
         }
         .padding(.vertical, 14)
         .overlay(alignment: .top) {
-            if !first { Rectangle().fill(Color(hex: 0xE0E0E0)).frame(height: 1.5) }
+            if !first { Rectangle().fill(Medi.rule).frame(height: 1.5) }
         }
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
@@ -435,9 +405,9 @@ struct InitialsCircle: View {
                 Text(letters).font(.karla(fontSize, .bold))
             }
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(Medi.ink)
         .frame(width: size, height: size)
-        .background(Medi.selected, in: Circle())
+        .background(Medi.accent, in: Circle())
         .accessibilityHidden(true)
     }
 

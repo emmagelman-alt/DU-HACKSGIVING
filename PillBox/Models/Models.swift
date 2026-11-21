@@ -111,16 +111,6 @@ final class Prescriber {
     var medications: [Medication] = []
 
     init(name: String) { self.name = name }
-
-    /// A phone number or email to send a message to.
-    var hasContact: Bool {
-        !phone.trimmingCharacters(in: .whitespaces).isEmpty || !email.trimmingCharacters(in: .whitespaces).isEmpty
-    }
-
-    /// "(412) 555-0186 · schen@example.com"
-    var contactLine: String {
-        [phone, email].map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.joined(separator: " · ")
-    }
 }
 
 /// A record that the person confirmed taking the meds for one dose time.

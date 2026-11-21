@@ -20,7 +20,7 @@ struct TodayView: View {
         GeometryReader { geo in
             VStack(spacing: 0) {
                 HomeHeader(topInset: geo.safeAreaInsets.top)
-                DateBar(day: $day).padding(.top, 15)
+                DateBar(day: $day).padding(.top, 32)
                 ScrollView {
                     let slots = Scheduler.slots(on: day, meds: meds)
                     LazyVStack(spacing: 14) {
@@ -40,7 +40,7 @@ struct TodayView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .ignoresSafeArea(edges: .top)
         }
-        .background(Medi.screen.ignoresSafeArea())
+        .background(MediBackground())
     }
 
     private func card(_ slot: DoseSlot) -> some View {
@@ -62,13 +62,13 @@ struct TodayView: View {
                 if taken {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 30))
-                        .foregroundStyle(Color(hex: 0x5BA832))
+                        .foregroundStyle(Medi.addedTick)
                         .accessibilityLabel("Taken")
                 }
             }
-            .padding(20)
+            .padding(22)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .mediCard(cornerRadius: 20)
         }
         .buttonStyle(.plain)
         // Only today's due or missed doses open the "Time for your meds" screen.
