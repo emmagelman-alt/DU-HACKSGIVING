@@ -18,7 +18,8 @@ struct MediPillBoxView: View {
                         Button { selected = med } label: { compartment(med) }
                             .buttonStyle(.plain)
                             .accessibilityLabel(med.displayName)
-                            .accessibilityValue(MedText.isExpiringSoon(med) ? "Expiring soon" : "")
+                            .accessibilityValue([med.pillDescription, MedText.isExpiringSoon(med) ? "Expiring soon" : ""]
+                                .filter { !$0.isEmpty }.joined(separator: ". "))
                     } else {
                         RoundedRectangle(cornerRadius: 32, style: .continuous)
                             .fill(Medi.compartment.opacity(0.55))
@@ -40,17 +41,15 @@ struct MediPillBoxView: View {
 
     private func compartment(_ med: Medication) -> some View {
         VStack(spacing: 0) {
-            Capsule()
-                .fill(Medi.pill)
-                .frame(width: 40, height: 87)
-                .padding(.top, 23)
+            // A line drawing of the pill itself: its shape, score line and imprint from the label.
+            PillOutline(med: med, size: 100)
+                .padding(.top, 10)
             Text(med.name)
                 .font(.karla(24))
                 .foregroundStyle(.black)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
                 .padding(.horizontal, 10)
-                .padding(.top, 3)
             Spacer(minLength: 0)
         }
         .frame(width: 155, height: 155)
@@ -66,6 +65,7 @@ struct MedDetailCard: View {
     @Environment(\.modelContext) private var context
     @State private var confirmDelete = false
     @State private var message: PrescriberMessage?
+    @State private var editingProvider = false
 
     private var expiry: Date? { med.activeBottles.first?.expirationDate ?? med.bottles.compactMap(\.expirationDate).max() }
 
@@ -87,10 +87,22 @@ struct MedDetailCard: View {
                 VStack(spacing: 23) {
                     MediButton(title: "DELETE MED", style: .stop) { confirmDelete = true }
                     MediButton(title: "GO BACK", style: .plain) { dismiss() }
-                    MediButton(title: "CONTACT PROVIDER", style: .plain, fontSize: 20) { message = contactMessage }
+                    VStack(spacing: 8) {
+                        MediButton(title: "CONTACT PROVIDER", style: .plain, fontSize: 20) { message = contactMessage }
+                            .disabled(!canContact)
+                        if !canContact { contactHint }
+                    }
                 }
             }
             .padding(.bottom, 60)
+        }
+        .sheet(isPresented: $editingProvider) {
+            if let p = med.prescriber {
+                NavigationStack {
+                    PrescriberEditView(prescriber: p)
+                        .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { editingProvider = false } } }
+                }
+            }
         }
         .confirmationDialog("Delete \(med.name)?", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("Delete", role: .destructive) { delete() }
@@ -106,6 +118,29 @@ struct MedDetailCard: View {
     }
 
     private var contactMessage: PrescriberMessage { .suggested(for: med) }
+
+    /// Greyed out until the provider has a phone number or email to send to.
+    private var canContact: Bool { med.prescriber?.hasContact ?? false }
+
+    @ViewBuilder private var contactHint: some View {
+        if let p = med.prescriber {
+            Button { editingProvider = true } label: {
+                Text("Add a phone or email for \(p.name)")
+                    .font(.karla(17, .bold))
+                    .underline()
+                    .foregroundStyle(Medi.ink)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(width: 266)
+            }
+            .buttonStyle(.plain)
+        } else {
+            Text("No provider on this label")
+                .font(.karla(17))
+                .foregroundStyle(Medi.inkSecondary)
+                .frame(width: 266)
+        }
+    }
 
     private func delete() {
         HealthProfile.recordStopped(med)

@@ -29,6 +29,11 @@ struct MedDraft {
     var labelText = ""
 
     var prescriberName = ""
+    var patientName = ""
+    var pillShape = ""
+    var pillScored = false
+    var pillImprint = ""
+    var pillColor = ""
     var found: Set<String> = []
 
     init(parsed p: ParsedLabel) {
@@ -54,6 +59,11 @@ struct MedDraft {
         fillDate = p.fillDate
         labelText = p.rawText
         prescriberName = p.prescriberName
+        patientName = p.patientName
+        pillShape = p.pillShape
+        pillScored = p.pillScored
+        pillImprint = p.pillImprint
+        pillColor = p.pillColor
         found = p.found
         exactTimes = defaultExactTimes()
     }
@@ -74,6 +84,10 @@ struct MedDraft {
         everyDay = med.weekdays.isEmpty
         weekdays = Set(med.weekdays)
         instructions = med.instructions
+        pillShape = med.pillShape
+        pillScored = med.pillScored
+        pillImprint = med.pillImprint
+        pillColor = med.pillColor
         found = ["name", "strength", "dose", "frequency", "expiration"]
     }
 
@@ -96,6 +110,15 @@ struct MedDraft {
         med.customTimes = useExactTimes && frequency != .asNeeded ? exactTimes.map { ClockText.minutes(of: $0) }.sorted() : []
         med.weekdays = everyDay ? [] : weekdays.sorted()
         med.instructions = instructions
+        applyLooks(to: med)
+    }
+
+    /// What the pill looks like (also used when a new bottle of a medication you already have is scanned).
+    func applyLooks(to med: Medication) {
+        med.pillShape = pillShape
+        med.pillScored = pillScored
+        med.pillImprint = pillImprint.trimmingCharacters(in: .whitespaces).uppercased()
+        med.pillColor = pillColor
     }
 
     /// Preview of the times this draft will remind at.

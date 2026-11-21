@@ -64,6 +64,7 @@ enum DemoData {
         lisinopril.directions = "Take one tablet by mouth once daily in the morning"
         lisinopril.dayParts = [.morning]
         lisinopril.colorIndex = 0
+        lisinopril.pillShape = "round"; lisinopril.pillScored = true; lisinopril.pillImprint = "10"; lisinopril.pillColor = "pink"
         lisinopril.prescriber = chen
         context.insert(lisinopril)
         bottle(lisinopril, asset: "label-lisinopril", rx: "6043921", exp: day(25), qty: 30, left: 22, refills: 2)
@@ -74,6 +75,7 @@ enum DemoData {
         metformin.dayParts = [.morning, .evening]
         metformin.instructions = "Take with food"
         metformin.colorIndex = 1
+        metformin.pillShape = "oblong"; metformin.pillImprint = "500"; metformin.pillColor = "white"
         metformin.prescriber = patel
         context.insert(metformin)
         bottle(metformin, asset: "label-metformin-a", rx: "6043977", exp: day(5), qty: 60, left: 8, refills: 0)
@@ -89,6 +91,7 @@ enum DemoData {
         amoxicillin.dayParts = []
         amoxicillin.instructions = "Finish the whole course"
         amoxicillin.colorIndex = 2
+        amoxicillin.pillShape = "capsule"; amoxicillin.pillColor = "pink and red"
         amoxicillin.prescriber = chen
         context.insert(amoxicillin)
         bottle(amoxicillin, asset: "label-amoxicillin", rx: "7781204", exp: day(12), qty: 30, left: 24, refills: 0, pharmacy: "Corner Drug Pharmacy")
@@ -98,6 +101,7 @@ enum DemoData {
         atorvastatin.dayParts = [.night]
         atorvastatin.instructions = "Avoid grapefruit"
         atorvastatin.colorIndex = 4
+        atorvastatin.pillShape = "oval"; atorvastatin.pillImprint = "20"; atorvastatin.pillColor = "white"
         atorvastatin.prescriber = chen
         context.insert(atorvastatin)
         bottle(atorvastatin, asset: "label-atorvastatin", rx: "5998310", exp: day(-3), qty: 90, left: 6, refills: 1)
@@ -108,6 +112,7 @@ enum DemoData {
         vitaminD.customTimes = [9 * 60 + 15]   // an exact time the person chose
         vitaminD.instructions = "Take with food"
         vitaminD.colorIndex = 3
+        vitaminD.pillShape = "softgel"; vitaminD.pillColor = "yellow"
         vitaminD.prescriber = chen
         context.insert(vitaminD)
         bottle(vitaminD, asset: "label-vitamind", rx: "6012255", exp: day(480), qty: 120, left: 74, refills: 3)

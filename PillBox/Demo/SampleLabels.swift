@@ -18,7 +18,8 @@ struct SampleLabel {
             "ONCE DAILY IN THE MORNING",
             "QTY: 30        REFILLS: 2",
             "DR. SARAH CHEN",
-            "DISCARD AFTER: 12/16/2026"
+            "DISCARD AFTER: 12/16/2026",
+            "DESCRIPTION: PINK ROUND TABLET, SCORED, IMPRINT 10"
         ]),
         SampleLabel(title: "Metformin 500 mg (bottle 1)", asset: "label-metformin-a", pharmacy: "MAIN STREET PHARMACY", lines: [
             "412 Main St, Pittsburgh PA 15213  (412) 555-0142",
@@ -29,7 +30,8 @@ struct SampleLabel {
             "WITH MEALS",
             "QTY: 60        REFILLS: 0",
             "DR. MARCUS PATEL",
-            "EXP: 11/26/2026"
+            "EXP: 11/26/2026",
+            "DESCRIPTION: WHITE OBLONG TABLET, IMPRINT 500"
         ]),
         SampleLabel(title: "Metformin 500 mg (bottle 2)", asset: "label-metformin-b", pharmacy: "MAIN STREET PHARMACY", lines: [
             "412 Main St, Pittsburgh PA 15213  (412) 555-0142",
@@ -40,7 +42,8 @@ struct SampleLabel {
             "WITH MEALS",
             "QTY: 60        REFILLS: 5",
             "DR. MARCUS PATEL",
-            "EXP: 09/2027"
+            "EXP: 09/2027",
+            "DESCRIPTION: WHITE OBLONG TABLET, IMPRINT 500"
         ]),
         SampleLabel(title: "Amoxicillin 500 mg", asset: "label-amoxicillin", pharmacy: "CORNER DRUG PHARMACY #2291", lines: [
             "88 Forbes Ave, Pittsburgh PA 15213  (412) 555-0177",
@@ -51,7 +54,8 @@ struct SampleLabel {
             "UNTIL ALL GONE",
             "QTY: 30        NO REFILLS",
             "DR. SARAH CHEN",
-            "USE BY: 12/03/2026"
+            "USE BY: 12/03/2026",
+            "DESCRIPTION: PINK AND RED CAPSULE"
         ]),
         SampleLabel(title: "Atorvastatin 20 mg", asset: "label-atorvastatin", pharmacy: "MAIN STREET PHARMACY", lines: [
             "412 Main St, Pittsburgh PA 15213  (412) 555-0142",
@@ -62,7 +66,8 @@ struct SampleLabel {
             "AVOID GRAPEFRUIT JUICE",
             "QTY: 90        REFILLS: 1",
             "DR. SARAH CHEN",
-            "EXP: 11/18/2026"
+            "EXP: 11/18/2026",
+            "DESCRIPTION: WHITE OVAL TABLET, IMPRINT 20"
         ]),
         SampleLabel(title: "Levothyroxine 75 mcg", asset: "label-levothyroxine", pharmacy: "MAIN STREET PHARMACY", lines: [
             "412 Main St, Pittsburgh PA 15213  (412) 555-0142",
@@ -73,7 +78,8 @@ struct SampleLabel {
             "ON AN EMPTY STOMACH",
             "QTY: 90        REFILLS: 3",
             "DR. MARCUS PATEL",
-            "EXP: 11/20/2027"
+            "EXP: 11/20/2027",
+            "DESCRIPTION: PURPLE CAPSULE-SHAPED TABLET, SCORED, IMPRINT 75"
         ]),
         SampleLabel(title: "Vitamin D3 1000 IU", asset: "label-vitamind", pharmacy: "MAIN STREET PHARMACY", lines: [
             "412 Main St, Pittsburgh PA 15213  (412) 555-0142",
@@ -84,7 +90,8 @@ struct SampleLabel {
             "WITH FOOD",
             "QTY: 120       REFILLS: 3",
             "DR. SARAH CHEN",
-            "EXP: 03/2028"
+            "EXP: 03/2028",
+            "DESCRIPTION: YELLOW OVAL SOFTGEL"
         ])
     ]
 

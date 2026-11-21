@@ -18,12 +18,12 @@ struct PrescriberEditView: View {
             } header: {
                 Text("Offer to message them")
             } footer: {
-                Text("PillBox writes the message for you. You review it and tap send, so nothing goes out without you.")
+                Text("MEDI writes the message for you. You review it and tap send, so nothing goes out without you.")
             }
             Section("Prescribes") {
                 if prescriber.medications.isEmpty { Text("No medications linked yet").foregroundStyle(.secondary) }
                 ForEach(prescriber.medications) { med in
-                    HStack { PillIcon(colorIndex: med.colorIndex, form: med.form, size: 30); Text(med.displayName) }
+                    HStack { PillOutline(med: med, size: 36); Text(med.displayName) }
                 }
             }
         }

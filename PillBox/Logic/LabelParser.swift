@@ -22,6 +22,13 @@ struct ParsedLabel: Equatable {
     var rxNumber: String = ""
     var pharmacy: String = ""
     var prescriberName: String = ""
+    /// Whose bottle it is ("Jordan Rivera").
+    var patientName: String = ""
+    /// What one pill looks like, from a line like "DESCRIPTION: PINK ROUND TABLET, SCORED, IMPRINT 10".
+    var pillShape: String = ""
+    var pillScored: Bool = false
+    var pillImprint: String = ""
+    var pillColor: String = ""
     var rawText: String = ""
 
     /// Which of the important fields were found on the label.
@@ -93,16 +100,18 @@ enum LabelParser {
         parseDose(dir, into: &r)
         parseFrequency(dir, into: &r)
         parseInstructions(upper, into: &r)
+        parsePillLooks(upperLines, into: &r)
 
-        // Name + strength
-        parseNameAndStrength(lines: lines, upperLines: upperLines, into: &r)
+        // Name + strength, then the patient (whose name is printed above the drug)
+        let drugLine = parseNameAndStrength(lines: lines, upperLines: upperLines, into: &r)
+        parsePatient(upperLines, drugLine: drugLine, into: &r)
         return r
     }
 
     // MARK: - Pieces
 
     private static func isFieldLine(_ l: String) -> Bool {
-        l.range(of: #"^(RX|QTY|QUANTITY|REFILL|EXP|DISCARD|USE BY|USE BEFORE|DR\.?\s|DOCTOR|PRESCRIB|DATE|FILLED|ORIG|MFG|NDC|PHARMACY|CAUTION|WARNING)"#, options: .regularExpression) != nil
+        l.range(of: #"^(RX|QTY|QUANTITY|REFILL|EXP|DISCARD|USE BY|USE BEFORE|DR\.?\s|DOCTOR|PRESCRIB|DATE|FILLED|ORIG|MFG|NDC|PHARMACY|CAUTION|WARNING|DESCRIPTION|IMPRINT|PATIENT)"#, options: .regularExpression) != nil
             || l.range(of: #"\d+(\.\d+)?\s*(MG|MCG|IU)\b"#, options: .regularExpression) != nil && !l.hasPrefix("TAKE")
     }
 
@@ -192,7 +201,118 @@ enum LabelParser {
         r.instructions = notes.compactMap { text.range(of: $0.0, options: .regularExpression) != nil ? $0.1 : nil }
     }
 
-    private static func parseNameAndStrength(lines: [String], upperLines: [String], into r: inout ParsedLabel) {
+    // MARK: What the pill looks like
+
+    private static let colorWords = ["OFF-WHITE", "WHITE", "YELLOW", "ORANGE", "PINK", "RED", "PEACH", "LIGHT BLUE", "BLUE",
+                                     "GREEN", "PURPLE", "LAVENDER", "BROWN", "TAN", "GRAY", "GREY", "BLACK", "BEIGE",
+                                     "CREAM", "MAROON", "TURQUOISE", "GOLD", "CLEAR"]
+
+    /// Shape words on labels, most specific first ("capsule-shaped" is a tablet, not a capsule).
+    private static let shapeWords: [(pattern: String, shape: String)] = [
+        (#"\bCAPSULE[\s-]*SHAPED?\b|\bCAPLETS?\b|\bOBLONG\b|\bBULLET\b"#, "oblong"),
+        (#"\bSOFT[\s-]*GELS?\b|\bGELCAPS?\b|\bLIQUI[\s-]*GELS?\b"#, "softgel"),
+        (#"\bROUND\b|\bCIRCULAR\b"#, "round"),
+        (#"\bOVAL\b|\bELLIPTICAL\b|\bEGG[\s-]*SHAPED\b"#, "oval"),
+        (#"\bDIAMOND\b"#, "diamond"),
+        (#"\bTRIANG(LE|ULAR)\b|\b3[\s-]*SIDED\b"#, "triangle"),
+        (#"\bSQUARE\b"#, "square"),
+        (#"\bRECTANG(LE|ULAR)\b"#, "rectangle"),
+        (#"\bPENTAGON(AL)?\b|\b5[\s-]*SIDED\b"#, "pentagon"),
+        (#"\bHEXAGON(AL)?\b|\b6[\s-]*SIDED\b"#, "hexagon"),
+        (#"\bOCTAGON(AL)?\b|\b8[\s-]*SIDED\b"#, "octagon"),
+        (#"\bCAPSULES?\b"#, "capsule")
+    ]
+
+    /// Reads the pill description that many pharmacies print, e.g.
+    /// "DESCRIPTION: PINK ROUND TABLET, SCORED, IMPRINT 10" or "THIS MEDICINE IS A WHITE, OVAL TABLET".
+    private static func parsePillLooks(_ upperLines: [String], into r: inout ParsedLabel) {
+        let colors = colorWords.map { "\\b\($0)\\b" }.joined(separator: "|")
+        let anyShape = shapeWords.dropLast().map(\.pattern).joined(separator: "|")
+        // Only lines that describe the pill, so "TAKE ONE CAPSULE" doesn't count as a description.
+        let described = upperLines.filter { l in
+            l.range(of: #"\b(DESCRIPTION|DESCR|SHAPE|IMPRINT(ED)?|MARKINGS?|(MEDICINE|MEDICATION|PILL|TABLET|CAPSULE) IS (A|AN))\b"#,
+                    options: .regularExpression) != nil
+                || (l.range(of: colors, options: .regularExpression) != nil && l.range(of: anyShape, options: .regularExpression) != nil)
+        }
+        guard !described.isEmpty else { return }
+        let text = described.joined(separator: " ")
+
+        if let shape = shapeWords.first(where: { text.range(of: $0.pattern, options: .regularExpression) != nil })?.shape {
+            r.pillShape = shape
+        }
+        r.pillScored = text.range(of: #"\b(SCORED|SCORE LINE|BISECTED|BREAK LINE)\b"#, options: .regularExpression) != nil
+        let found = colorWords.compactMap { c -> (String.Index, String)? in
+            text.range(of: "\\b\(c)\\b", options: .regularExpression).map { ($0.lowerBound, c) }
+        }
+        .sorted { $0.0 < $1.0 }
+        .map(\.1)
+        .filter { c in c != "WHITE" || !text.contains("OFF-WHITE") }
+        r.pillColor = Array(found.prefix(2)).joined(separator: " and ").lowercased()
+        if let m = first(#"\bIMPRINT(?:ED)?(?:\s+WITH)?\s*:?\s*["']?([A-Z0-9][A-Z0-9 \-/]{0,20})"#, in: text) {
+            let imprint = m[1]
+                .replacingOccurrences(of: #"\s+(ON|AND|SCORED|BOTH|ONE|THE)\b.*$"#, with: "", options: .regularExpression)
+                .trimmingCharacters(in: .whitespaces.union(.punctuationCharacters))
+            if !imprint.isEmpty { r.pillImprint = String(imprint.prefix(8)).trimmingCharacters(in: .whitespaces) }
+        }
+        if !r.pillShape.isEmpty { r.found.insert("looks") }
+    }
+
+    // MARK: Patient
+
+    /// Words that are never part of a person's name on a label.
+    private static let notNameWords: Set<String> = Set([
+        "DR", "MD", "DO", "NP", "PA", "PHARMACY", "PHARMACIST", "DRUG", "DRUGS", "STORE", "STREET", "ST", "AVE", "AVENUE",
+        "ROAD", "RD", "BLVD", "SUITE", "TAKE", "GIVE", "USE", "APPLY", "BY", "MOUTH", "DAILY", "ONCE", "TWICE", "WITH",
+        "WITHOUT", "MEALS", "MEAL", "FOOD", "WATER", "UNTIL", "ALL", "GONE", "AVOID", "JUICE", "EMPTY", "STOMACH", "MORNING",
+        "EVENING", "NIGHT", "BEDTIME", "AT", "IN", "THE", "ON", "AN", "A", "OF", "FOR", "AND", "OR", "TO", "EVERY", "HOURS",
+        "HOUR", "AS", "NEEDED", "TABLET", "TABLETS", "CAPSULE", "CAPSULES", "SOFTGEL", "SOFTGELS", "PILL", "PILLS", "QTY",
+        "REFILL", "REFILLS", "NO", "NONE", "EXP", "EXPIRES", "DISCARD", "AFTER", "DATE", "FILLED", "RX", "MFG", "NDC",
+        "GENERIC", "SUBSTITUTED", "CAUTION", "WARNING", "FEDERAL", "LAW", "KEEP", "REACH", "CHILDREN", "SHAKE", "WELL",
+        "NOT", "CRUSH", "CHEW", "SWALLOW", "WHOLE", "MAY", "CAUSE", "DROWSINESS", "ALCOHOL", "SUNLIGHT", "DESCRIPTION",
+        "IMPRINT", "ORAL", "HCL", "ER", "XR", "CVS", "WALGREENS", "RITE", "AID", "WALMART", "KROGER", "TARGET", "COSTCO",
+        "PUBLIX", "SAFEWAY", "GIANT", "EAGLE", "HEALTH", "CARE", "CLINIC", "MEDICAL", "CENTER", "HOSPITAL", "FAMILY",
+        "MEDICINE", "ONLY", "BEFORE", "BEYOND", "PATIENT", "INFORMATION", "QUESTIONS", "CALL", "PHONE", "TEL", "FAX",
+        "INC", "LLC", "CORP", "VITAMIN", "DOSE", "DOSES", "DAYS", "WEEK", "WEEKLY", "LEFT", "REMAINING"
+    ]).union(colorWords)
+
+    /// "PATIENT: JORDAN RIVERA" anywhere, otherwise a plain two-to-four-word name printed above the drug name.
+    private static func parsePatient(_ upperLines: [String], drugLine: Int?, into r: inout ParsedLabel) {
+        let labelled = upperLines.lazy.compactMap { l -> String? in
+            guard let m = first(#"^(?:PATIENT(?:\s+NAME)?|PT(?:\s+NAME)?|NAME|FOR)\s*[:\-]\s*(.+)$"#, in: l) else { return nil }
+            return personName(m[1])
+        }.first
+        // Without a labelled name, only trust lines above the drug name, so directions can't be mistaken for one.
+        let plain = drugLine.flatMap { idx in upperLines[..<idx].lazy.compactMap { personName($0) }.first }
+        guard let name = labelled ?? plain,
+              name.caseInsensitiveCompare(r.prescriberName.replacingOccurrences(of: "Dr. ", with: "")) != .orderedSame else { return }
+        r.patientName = name
+        r.found.insert("patient")
+    }
+
+    /// "JORDAN RIVERA" or "RIVERA, JORDAN" → "Jordan Rivera"; anything else → nil.
+    private static func personName(_ raw: String) -> String? {
+        var s = raw.replacingOccurrences(of: #"\s+(DOB|D\.O\.B\.?|BORN|BIRTH)\b.*$"#, with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespaces.union(CharacterSet(charactersIn: ".:;-")))
+        guard (5...36).contains(s.count),
+              s.range(of: #"^[A-Z][A-Z'.\-]*(?:,?\s+[A-Z][A-Z'.\-]*){1,3}$"#, options: .regularExpression) != nil else { return nil }
+        let words = s.replacingOccurrences(of: ",", with: " ").split(separator: " ")
+            .map { $0.trimmingCharacters(in: CharacterSet(charactersIn: ".'-")) }
+        guard words.filter({ $0.count >= 2 }).count >= 2,
+              !words.contains(where: { notNameWords.contains($0) }),
+              !KnownDrugs.names.contains(where: { s.contains($0) }) else { return nil }
+        if let comma = s.firstIndex(of: ",") {
+            let last = s[..<comma].trimmingCharacters(in: .whitespaces)
+            let rest = s[s.index(after: comma)...].trimmingCharacters(in: .whitespaces)
+            s = rest + " " + last
+        }
+        return titleCase(s)
+    }
+
+    // MARK: Name and strength
+
+    /// Returns the index of the line with the drug name, if one was found.
+    @discardableResult
+    private static func parseNameAndStrength(lines: [String], upperLines: [String], into r: inout ParsedLabel) -> Int? {
         let strengthRx = #"(\d+(?:\.\d+)?(?:\s*/\s*\d+(?:\.\d+)?)?)\s*(MG|MCG|G|ML|%|UNITS?|IU)\b"#
         let all = upperLines.joined(separator: "\n")
         let known = KnownDrugs.names.first { all.range(of: "\\b\($0)\\b", options: .regularExpression) != nil }
@@ -204,7 +324,7 @@ enum LabelParser {
         } ?? upperLines.firstIndex { l in
             l.range(of: strengthRx, options: .regularExpression) != nil && !l.hasPrefix("TAKE") && !l.hasPrefix("QTY") && !l.hasPrefix("RX")
         }
-        guard let idx = candidate else { return }
+        guard let idx = candidate else { return nil }
         let line = upperLines[idx]
 
         if let m = first(strengthRx, in: line) {
@@ -229,6 +349,7 @@ enum LabelParser {
         if !r.name.isEmpty { r.found.insert("name") }
         if line.range(of: #"\bCAP(SULE)?S?\b"#, options: .regularExpression) != nil, !r.found.contains("dose") { r.form = "capsule" }
         if line.range(of: #"\bTAB(LET)?S?\b"#, options: .regularExpression) != nil, !r.found.contains("dose") { r.form = "tablet" }
+        return idx
     }
 
     // MARK: - Dates

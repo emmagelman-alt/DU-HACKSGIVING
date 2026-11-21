@@ -110,6 +110,13 @@ final class ScanSession {
         absorb(LabelParser.parse(lines: lines))
     }
 
+    /// One whole photo's text. Its lines were already added a few at a time; parsing the photo on its own
+    /// as well catches anything that reads better without the other photos' lines mixed in.
+    func addPhoto(_ photoLines: [String]) {
+        add(photoLines)
+        absorb(LabelParser.parse(lines: photoLines))
+    }
+
     /// Keeps the first value found for each field, so a blurry later frame can't undo it.
     private func absorb(_ p: ParsedLabel) {
         var l = label
@@ -129,6 +136,16 @@ final class ScanSession {
         }
         if newly("expiration") { l.expiration = p.expiration; l.found.insert("expiration") }
         if newly("prescriber") { l.prescriberName = p.prescriberName; l.found.insert("prescriber") }
+        if newly("patient") { l.patientName = p.patientName; l.found.insert("patient") }
+        if newly("looks") {
+            l.pillShape = p.pillShape
+            l.pillColor = p.pillColor
+            l.found.insert("looks")
+        }
+        // The score line and imprint can be on a different side of the bottle from the shape.
+        if p.pillScored { l.pillScored = true }
+        if l.pillImprint.isEmpty { l.pillImprint = p.pillImprint }
+        if l.pillColor.isEmpty { l.pillColor = p.pillColor }
         if newly("rx") { l.rxNumber = p.rxNumber; l.found.insert("rx") }
         if newly("quantity") { l.quantity = p.quantity; l.found.insert("quantity") }
         if newly("refills") { l.refills = p.refills; l.found.insert("refills") }
@@ -148,8 +165,12 @@ struct TakeScanView: View {
     @State private var cameraState: CameraState = .checking
     @State private var stillImage: UIImage?
     @State private var replay: Task<Void, Never>?
-    @State private var photoItem: PhotosPickerItem?
+    @State private var photoItems: [PhotosPickerItem] = []
     @State private var showPhotos = false
+    /// "Photo 2 of 3" while several photos are being read.
+    @State private var photoProgress: (index: Int, count: Int)?
+    /// The session came from a built-in sample label, so a real photo should start over.
+    @State private var fromSample = false
     @State private var showManualButton = false
     @State private var finished = false
 
@@ -195,14 +216,20 @@ struct TakeScanView: View {
         .onChange(of: session.foundCount) { old, new in
             if new > old { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
         }
-        .photosPicker(isPresented: $showPhotos, selection: $photoItem, matching: .images)
-        .onChange(of: photoItem) { _, item in
-            guard let item else { return }
+        // Several photos of the same bottle (different sides) all count toward one medication.
+        .photosPicker(isPresented: $showPhotos, selection: $photoItems, maxSelectionCount: 10,
+                      selectionBehavior: .ordered, matching: .images)
+        .onChange(of: photoItems) { _, items in
+            guard !items.isEmpty else { return }
             Task {
-                if let data = try? await item.loadTransferable(type: Data.self), let image = UIImage(data: data) {
-                    replayScan(of: image)
+                var images: [UIImage] = []
+                for item in items {
+                    if let data = try? await item.loadTransferable(type: Data.self), let image = UIImage(data: data) {
+                        images.append(image)
+                    }
                 }
-                photoItem = nil
+                photoItems = []
+                if !images.isEmpty { replayScan(of: images, startOver: fromSample) }
             }
         }
         .onDisappear { replay?.cancel() }
@@ -216,7 +243,7 @@ struct TakeScanView: View {
             if let stillImage {
                 PanningLabel(image: stillImage)
                     .id(ObjectIdentifier(stillImage))
-                    .overlay { ScanSweep() }
+                    .overlay { if isReading { ScanSweep() } }
             } else {
                 switch cameraState {
                 case .checking:
@@ -239,30 +266,72 @@ struct TakeScanView: View {
         .overlay(alignment: .topTrailing) {
             if stillImage != nil || isLive { sourceMenu(label: nil).padding(12) }
         }
-        .overlay(alignment: .bottom) {
-            if showManualButton || session.foundCount > 0, !session.isComplete {
-                Button("Fill in the rest myself") { finish() }
-                    .font(.karla(18, .medium))
+        .overlay(alignment: .topLeading) {
+            if let photoProgress, photoProgress.count > 1 {
+                Text("Photo \(photoProgress.index) of \(photoProgress.count)")
+                    .font(.karla(17, .bold))
                     .foregroundStyle(Medi.ink)
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 10)
+                    .padding(.horizontal, 14)
+                    .frame(height: 44)
                     .background(.regularMaterial, in: Capsule())
-                    .padding(.bottom, 14)
+                    .padding(12)
                     .transition(.opacity)
             }
         }
+        .overlay(alignment: .bottom) {
+            if showManualButton || session.foundCount > 0, !session.isComplete {
+                VStack(spacing: 8) {
+                    // Another side of the bottle can fill in what this photo didn't show.
+                    if stillImage != nil, !isReading, !fromSample {
+                        overlayButton("Add another photo", symbol: "plus") { showPhotos = true }
+                    }
+                    overlayButton("Fill in the rest myself") { finish() }
+                }
+                .padding(.bottom, 14)
+                .transition(.opacity)
+            }
+        }
     }
+
+    private func overlayButton(_ title: String, symbol: String? = nil, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                if let symbol { Image(systemName: symbol).font(.system(size: 15, weight: .bold)) }
+                Text(title).font(.karla(18, .medium))
+            }
+            .foregroundStyle(Medi.ink)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 10)
+            .background(.regularMaterial, in: Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// A photo is still being read.
+    private var isReading: Bool { photoProgress != nil }
 
     private var isLive: Bool { if case .live = cameraState { true } else { false } }
 
     /// Photos and the sample labels, for the simulator (no camera) and for trying the flow without a bottle.
     private func sourceMenu(label: String?) -> some View {
         Menu {
-            Button { showPhotos = true } label: { Label("Use a photo of a label", systemImage: "photo.on.rectangle") }
+            Button { showPhotos = true } label: {
+                Label(session.foundCount > 0 && !fromSample ? "Add more photos of this bottle" : "Use photos of a label",
+                      systemImage: "photo.on.rectangle")
+            }
+            if stillImage != nil, DataScannerViewController.isSupported, DataScannerViewController.isAvailable {
+                // Back to the live camera, keeping everything read so far.
+                Button {
+                    replay?.cancel()
+                    photoProgress = nil
+                    stillImage = nil
+                    cameraState = .live
+                } label: { Label("Use the camera", systemImage: "camera") }
+            }
             Section("Sample labels") {
                 ForEach(DemoData.sampleLabels, id: \.asset) { sample in
                     Button(sample.title) {
-                        if let img = UIImage(named: sample.asset) { replayScan(of: img) }
+                        if let img = UIImage(named: sample.asset) { replayScan(of: [img], startOver: true, sample: true) }
                     }
                 }
             }
@@ -331,7 +400,7 @@ struct TakeScanView: View {
     private func startCamera() async {
         if let asset = AppRouter.shared.scanDemoAsset, let img = UIImage(named: asset) {
             AppRouter.shared.scanDemoAsset = nil
-            replayScan(of: img)
+            replayScan(of: [img], startOver: true, sample: true)
         }
         guard DataScannerViewController.isSupported else {
             cameraState = .unavailable("Live scanning needs an iPhone camera. Try a sample label instead.")
@@ -345,20 +414,36 @@ struct TakeScanView: View {
             : .unavailable("Turn on camera access for MEDI in Settings, or try a sample label.")
     }
 
-    /// Reads a still photo, then feeds its lines in a few at a time, as if the bottle were turning.
-    private func replayScan(of image: UIImage) {
+    /// Reads still photos one after another and feeds each one's lines in a few at a time, as if the
+    /// bottle were turning. Everything read so far is kept unless `startOver` is set, so photos of
+    /// different sides of one bottle add up to one medication.
+    private func replayScan(of images: [UIImage], startOver: Bool, sample: Bool = false) {
         replay?.cancel()
-        session.reset()
+        if startOver { session.reset() }
+        fromSample = sample
         finished = false
-        stillImage = image
+        stillImage = images.first
         replay = Task {
-            guard let lines = try? await LabelReader.readLines(from: image), !Task.isCancelled else { return }
-            for i in lines.indices {
-                try? await Task.sleep(for: .milliseconds(320))
-                if Task.isCancelled { return }
-                withAnimation { session.add(Array(lines[...i])) }
+            let pause: Duration = images.count > 1 ? .milliseconds(180) : .milliseconds(320)
+            for (n, image) in images.enumerated() {
+                withAnimation {
+                    stillImage = image
+                    photoProgress = (n + 1, images.count)
+                }
+                guard let lines = try? await LabelReader.readLines(from: image), !Task.isCancelled else { break }
+                for i in lines.indices {
+                    try? await Task.sleep(for: pause)
+                    if Task.isCancelled { return }
+                    withAnimation { session.add(Array(lines[...i])) }
+                }
+                withAnimation { session.addPhoto(lines) }
+                if session.isComplete { break }
             }
-            if !session.isComplete { withAnimation { showManualButton = true } }
+            if Task.isCancelled { return }
+            withAnimation {
+                photoProgress = nil
+                if !session.isComplete { showManualButton = true }
+            }
         }
     }
 
@@ -493,7 +578,7 @@ struct ConfirmInfoView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .sheet(item: $editing) { field in
             MedFieldEditor(field: field, draft: $draft)
-                .presentationDetents(field == .time ? [.medium, .large] : [.medium])
+                .presentationDetents(field == .time || field == .dosage ? [.medium, .large] : [.medium])
         }
     }
 
@@ -537,6 +622,17 @@ struct MedFieldEditor: View {
                     Picker("Form", selection: $draft.form) {
                         ForEach(forms.contains(draft.form) ? forms : forms + [draft.form], id: \.self) { Text($0) }
                     }
+                    Section {
+                        pillShapeGrid
+                        Toggle("Score line across the middle", isOn: $draft.pillScored)
+                        TextField("Letters or numbers on it (optional)", text: $draft.pillImprint)
+                            .textInputAutocapitalization(.characters)
+                            .autocorrectionDisabled()
+                    } header: {
+                        Text("What the pill looks like")
+                    } footer: {
+                        Text("This drawing shows on the pill's compartment in your pill box.")
+                    }
                 case .time:
                     Section {
                         ForEach(draft.exactTimes.indices, id: \.self) { i in
@@ -571,6 +667,30 @@ struct MedFieldEditor: View {
                 draft.useExactTimes = true
             }
         }
+    }
+
+    /// Every shape as a small line drawing; the chosen one is outlined.
+    private var pillShapeGrid: some View {
+        let current = PillShape.resolve(shape: draft.pillShape, form: draft.form)
+        return LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 8) {
+            ForEach(PillShape.pickable) { shape in
+                Button { draft.pillShape = shape.rawValue } label: {
+                    VStack(spacing: 2) {
+                        PillOutline(shape: shape, scored: draft.pillScored && shape == current,
+                                    imprint: shape == current ? draft.pillImprint.uppercased() : "", size: 54)
+                        Text(shape.title).font(.karla(13)).foregroundStyle(Medi.ink)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
+                    .background(shape == current ? Medi.compartment : .clear, in: RoundedRectangle(cornerRadius: 12))
+                    .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(shape == current ? Medi.ink : .clear, lineWidth: 2))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(shape.title)
+                .accessibilityAddTraits(shape == current ? .isSelected : [])
+            }
+        }
+        .padding(.vertical, 4)
     }
 
     private var title: String {
@@ -637,6 +757,8 @@ enum MedSaver {
         let med: Medication
         if let match = meds.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame && squash($0.strength) == squash(draft.strength) }) {
             med = match
+            // A newer label can say what the pill looks like when the first one didn't.
+            if !draft.pillShape.isEmpty { draft.applyLooks(to: med) }
         } else {
             med = Medication(name: name, strength: draft.strength)
             med.colorIndex = meds.count
@@ -667,6 +789,14 @@ enum MedSaver {
                 med.prescriber = p
             }
         }
+        // The label says whose bottle it is: fill in the name on the Info tab if it's still blank.
+        // (A name the person typed themselves is never replaced.)
+        let patient = draft.patientName.trimmingCharacters(in: .whitespaces)
+        let saved = UserDefaults.standard.string(forKey: "patientName")?.trimmingCharacters(in: .whitespaces) ?? ""
+        if !patient.isEmpty, saved.isEmpty {
+            UserDefaults.standard.set(patient, forKey: "patientName")
+        }
+
         try? context.save()
         Task { await ReminderService.shared.rescheduleAll(context: context) }
         return med

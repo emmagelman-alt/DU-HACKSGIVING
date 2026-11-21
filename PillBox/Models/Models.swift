@@ -36,6 +36,12 @@ final class Medication {
     var weekdays: [Int] = []
     var instructions: String = ""
     var colorIndex: Int = 0
+    /// What one pill looks like, from the label's description ("white oval tablet, scored, imprint 10").
+    /// An empty shape means "work it out from the form" (see `PillShape.resolve`).
+    var pillShape: String = ""
+    var pillScored: Bool = false
+    var pillImprint: String = ""
+    var pillColor: String = ""
     var createdAt: Date = Date()
     var prescriber: Prescriber?
     @Relationship(deleteRule: .cascade, inverse: \Bottle.medication)
@@ -105,6 +111,16 @@ final class Prescriber {
     var medications: [Medication] = []
 
     init(name: String) { self.name = name }
+
+    /// A phone number or email to send a message to.
+    var hasContact: Bool {
+        !phone.trimmingCharacters(in: .whitespaces).isEmpty || !email.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    /// "(412) 555-0186 · schen@example.com"
+    var contactLine: String {
+        [phone, email].map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.joined(separator: " · ")
+    }
 }
 
 /// A record that the person confirmed taking the meds for one dose time.

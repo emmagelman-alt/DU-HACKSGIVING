@@ -173,40 +173,83 @@ struct InfoView: View {
                     .foregroundStyle(Medi.inkSecondary)
             }
             ForEach(prescribers) { p in
-                HStack(spacing: 14) {
-                    NavigationLink(value: p) {
-                        HStack(spacing: 14) {
-                            InitialsCircle(name: p.name, size: 52, fontSize: 20)
-                            Text(p.name)
-                                .font(.karla(21, .semibold))
-                                .foregroundStyle(Medi.ink)
-                                .lineLimit(2)
-                                .minimumScaleFactor(0.8)
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 14) {
+                        NavigationLink(value: p) {
+                            HStack(spacing: 14) {
+                                InitialsCircle(name: p.name, size: 52, fontSize: 20)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(p.name)
+                                        .font(.karla(21, .semibold))
+                                        .foregroundStyle(Medi.ink)
+                                        .lineLimit(2)
+                                        .minimumScaleFactor(0.8)
+                                    if !p.practice.isEmpty {
+                                        Text(p.practice)
+                                            .font(.karla(16))
+                                            .foregroundStyle(Medi.inkSecondary)
+                                            .lineLimit(1)
+                                            .minimumScaleFactor(0.8)
+                                    }
+                                }
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    if let message = PrescriberMessage.suggested(for: p) {
-                        Button { router.medsPath.append(message) } label: {
-                            HStack(spacing: 8) {
-                                Image("icon-msg")
-                                Text("Message").font(.karla(17, .bold))
                             }
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 12)
-                            .background(Medi.selected, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel("Message \(p.name)")
+                        if let message = PrescriberMessage.suggested(for: p) {
+                            Button { router.medsPath.append(message) } label: {
+                                HStack(spacing: 8) {
+                                    Image("icon-msg")
+                                    Text("Message").font(.karla(17, .bold))
+                                }
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 12)
+                                .background(Medi.selected, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            }
+                            .buttonStyle(.plain)
+                            // Nothing to send to until there's a phone number or email.
+                            .disabled(!p.hasContact)
+                            .opacity(p.hasContact ? 1 : 0.3)
+                            .accessibilityLabel("Message \(p.name)")
+                            .accessibilityHint(p.hasContact ? "" : "Add a phone number or email first")
+                        }
                     }
+                    contactRow(p)
                 }
             }
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+    }
+
+    /// The provider's phone and email, or a button to add them.
+    private func contactRow(_ p: Prescriber) -> some View {
+        Button { router.medsPath.append(p) } label: {
+            HStack(spacing: 10) {
+                Image(systemName: p.hasContact ? "phone" : "plus.circle")
+                    .font(.system(size: 17, weight: .semibold))
+                    .frame(width: 22)
+                Text(p.hasContact ? p.contactLine : "Add phone or email")
+                    .font(.karla(18, p.hasContact ? .regular : .bold))
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Image(systemName: "pencil")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Medi.inkSecondary)
+            }
+            .foregroundStyle(Medi.ink)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(Medi.screen, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(p.hasContact ? "Contact info for \(p.name): \(p.contactLine)" : "Add a phone number or email for \(p.name)")
+        .accessibilityHint("Edit contact info")
     }
 
     private var pharmacyCard: some View {

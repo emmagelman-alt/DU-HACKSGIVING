@@ -63,6 +63,8 @@ for label in SampleLabel.all {
         text(l[6], at: CGPoint(x: 70, y: y), size: 32, weight: .medium); y += 50
         text(l[7], at: CGPoint(x: 70, y: y), size: 32, weight: .medium)
         text(l[8], at: CGPoint(x: 820, y: y - 50), size: 36, weight: .heavy, color: NSColor(red: 0.75, green: 0.1, blue: 0.1, alpha: 1))
+        // What the pill looks like, printed small at the bottom as many pharmacies do.
+        if l.count > 9 { text(l[9], at: CGPoint(x: 70, y: y + 58), size: 30, weight: .semibold, color: NSColor(white: 0.25, alpha: 1)) }
     }
     writeImageSet(name: label.asset, data: data)
     // Also save loose copies for adding to the simulator's photo library.
