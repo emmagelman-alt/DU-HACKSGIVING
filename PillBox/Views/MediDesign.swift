@@ -30,6 +30,8 @@ enum Medi {
     /// The "added" tick.
     static let addedFill = Color(hex: 0xACF492)
     static let addedTick = Color(hex: 0x488A2C)
+    /// The glowing ring that points to the + tab during onboarding.
+    static let addGlow = Color(hex: 0x3DCB45)
     /// Top of every screen's background, fading to white.
     static let backgroundTop = Color(hex: 0xFFEEEB)
 }
@@ -71,11 +73,16 @@ extension Font {
 /// The bottom bar: Home, Add meds, Pill box, Info.
 struct MediTabBar: View {
     @Binding var tab: AppTab
+    /// On the onboarding Home (no medications yet) a glowing green ring shows which + to tap, so
+    /// people don't try to tap the + drawn in the speech bubble.
+    var highlightAdd = false
 
     var body: some View {
         HStack(spacing: 10) {
             item("home", label: "Home", selected: tab == .today) { tab = .today }
             item("add", label: "Add medication", selected: tab == .add) { tab = .add }
+                .overlay { if highlightAdd && tab != .add { AddGlowRing() } }
+                .accessibilityHint(highlightAdd ? "Start here to scan your first medication" : "")
             item("grid", label: "Pill box", selected: tab == .pillBox) { tab = .pillBox }
             item("info", label: "Info", selected: tab == .meds) { tab = .meds }
         }
@@ -102,6 +109,27 @@ struct MediTabBar: View {
         .buttonStyle(.plain)
         .accessibilityLabel(label)
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// A softly pulsing green ring around the + tab (still, with Reduce Motion on).
+private struct AddGlowRing: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var bright = false
+
+    var body: some View {
+        Circle()
+            .stroke(Medi.addGlow, lineWidth: 4)
+            .frame(width: 58, height: 58)
+            .shadow(color: Medi.addGlow.opacity(bright ? 0.95 : 0.5), radius: bright ? 12 : 6)
+            .shadow(color: Medi.addGlow.opacity(bright ? 0.6 : 0.25), radius: bright ? 22 : 10)
+            .scaleEffect(bright && !reduceMotion ? 1.07 : 1)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+            .onAppear {
+                guard !reduceMotion else { bright = true; return }
+                withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) { bright = true }
+            }
     }
 }
 

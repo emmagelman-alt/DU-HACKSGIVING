@@ -33,7 +33,7 @@ struct RootView: View {
                     }
                 }
                 .safeAreaInset(edge: .bottom, spacing: 0) {
-                    MediTabBar(tab: $router.tab)
+                    MediTabBar(tab: $router.tab, highlightAdd: meds.isEmpty && router.tab == .today)
                 }
                 .transition(.opacity)
             }
