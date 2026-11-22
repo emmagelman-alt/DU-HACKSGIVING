@@ -32,6 +32,8 @@ enum Medi {
     static let addedTick = Color(hex: 0x488A2C)
     /// The glowing ring that points to the + tab during onboarding.
     static let addGlow = Color(hex: 0x3DCB45)
+    /// The suns' arms, sampled from the onboarding drawings.
+    static let sunArm = Color(hex: 0xF99606)
     /// Top of every screen's background, fading to white.
     static let backgroundTop = Color(hex: 0xFFEEEB)
 }
@@ -82,6 +84,7 @@ struct MediTabBar: View {
             item("home", label: "Home", selected: tab == .today) { tab = .today }
             item("add", label: "Add medication", selected: tab == .add) { tab = .add }
                 .overlay { if highlightAdd && tab != .add { AddGlowRing() } }
+                .anchorPreference(key: AddTabBoundsKey.self, value: .bounds) { $0 }
                 .accessibilityHint(highlightAdd ? "Start here to scan your first medication" : "")
             item("grid", label: "Pill box", selected: tab == .pillBox) { tab = .pillBox }
             item("info", label: "Info", selected: tab == .meds) { tab = .meds }
@@ -109,6 +112,98 @@ struct MediTabBar: View {
         .buttonStyle(.plain)
         .accessibilityLabel(label)
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// Where the + tab is, so the onboarding sun's arrow can point at it.
+struct AddTabBoundsKey: PreferenceKey {
+    static var defaultValue: Anchor<CGRect>? { nil }
+    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) { value = value ?? nextValue() }
+}
+
+/// On the onboarding Home, the pointing sun's forearm reaches down toward the + tab and holds a green
+/// arrow pointing at it, poking gently toward the button (still, with Reduce Motion on). It's drawn
+/// above the bottom bar so the arrow can reach the button.
+struct SunPointer: View {
+    let target: Anchor<CGRect>
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var poke = false
+
+    var body: some View {
+        GeometryReader { geo in
+            let plus = geo[target]
+            let elbow = OnboardingHomeView.sunElbow
+            let dx = plus.midX - elbow.x, dy = plus.midY - elbow.y
+            let length = max(1, (dx * dx + dy * dy).squareRoot())
+            let dir = CGVector(dx: dx / length, dy: dy / length)
+            let push: CGFloat = poke && !reduceMotion ? 5 : 0
+            let forearm: CGFloat = 23
+            let hand = CGPoint(x: elbow.x + dir.dx * forearm, y: elbow.y + dir.dy * forearm)
+            // Stop just short of the glowing ring.
+            let tip = CGPoint(x: plus.midX - dir.dx * 38, y: plus.midY - dir.dy * 38)
+            ZStack {
+                ForearmShape(elbow: elbow, dir: dir, reach: forearm + push)
+                    .stroke(Medi.sunArm, style: StrokeStyle(lineWidth: 3.7, lineCap: .round))
+                Group {
+                    PointerArrow(from: hand, to: tip)
+                        .fill(Medi.addGlow)
+                        .shadow(color: Medi.addGlow.opacity(0.55), radius: 5)
+                    // The sun's fist around the end of the arrow.
+                    Circle()
+                        .fill(Medi.sunArm)
+                        .frame(width: 8, height: 8)
+                        .position(hand)
+                }
+                .offset(x: dir.dx * push, y: dir.dy * push)
+            }
+        }
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) { poke = true }
+        }
+    }
+}
+
+/// The sun's forearm, from its elbow toward the + tab. `reach` animates as the arm pokes.
+private struct ForearmShape: Shape {
+    let elbow: CGPoint
+    let dir: CGVector
+    var reach: CGFloat
+    var animatableData: CGFloat {
+        get { reach }
+        set { reach = newValue }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        Path { p in
+            p.move(to: elbow)
+            p.addLine(to: CGPoint(x: elbow.x + dir.dx * reach, y: elbow.y + dir.dy * reach))
+        }
+    }
+}
+
+/// A straight arrow with a triangular head, as one outline so it fills cleanly.
+private struct PointerArrow: Shape {
+    let from: CGPoint
+    let to: CGPoint
+
+    func path(in rect: CGRect) -> Path {
+        let dx = to.x - from.x, dy = to.y - from.y
+        let length = (dx * dx + dy * dy).squareRoot()
+        let head: CGFloat = 17, halfHead: CGFloat = 10, halfShaft: CGFloat = 2.8
+        var p = Path()
+        p.move(to: CGPoint(x: 0, y: -halfShaft))
+        p.addLine(to: CGPoint(x: length - head, y: -halfShaft))
+        p.addLine(to: CGPoint(x: length - head, y: -halfHead))
+        p.addLine(to: CGPoint(x: length, y: 0))
+        p.addLine(to: CGPoint(x: length - head, y: halfHead))
+        p.addLine(to: CGPoint(x: length - head, y: halfShaft))
+        p.addLine(to: CGPoint(x: 0, y: halfShaft))
+        p.closeSubpath()
+        return p.applying(CGAffineTransform(translationX: from.x, y: from.y).rotated(by: atan2(dy, dx)))
     }
 }
 
@@ -316,16 +411,29 @@ struct OnboardingHomeView: View {
                 .offset(x: 43, y: 599)
                 .accessibilityLabel("Tap the plus button below to upload your medications")
 
-            Image("onboarding-sun-wave")
+            // The second sun's forearm is drawn by SunPointer, reaching down to the + tab with an arrow.
+            Image("onboarding-sun-point")
                 .resizable()
                 .scaledToFill()
-                .frame(width: 169, height: 301)
-                .offset(x: 259, y: 524)
+                .frame(width: Self.pointingSun.width, height: Self.pointingSun.height)
+                .offset(x: Self.pointingSun.minX, y: Self.pointingSun.minY)
                 .accessibilityHidden(true)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .ignoresSafeArea()
         .allowsHitTesting(false)
+    }
+
+    /// Where the pointing sun sits on the 402 × 874 screen.
+    static let pointingSun = CGRect(x: 259, y: 524, width: 169, height: 301)
+
+    /// The sun's elbow on screen: pixel (86, 941) of the 816 × 1456 drawing, placed the way
+    /// `scaledToFill` places it. Its forearm was taken out of the drawing so it can point anywhere.
+    static var sunElbow: CGPoint {
+        let f = pointingSun
+        let scale = max(f.width / 816, f.height / 1456)
+        let shift = CGPoint(x: (816 * scale - f.width) / 2, y: (1456 * scale - f.height) / 2)
+        return CGPoint(x: f.minX - shift.x + 86 * scale, y: f.minY - shift.y + 941 * scale)
     }
 
     private func bubble(width: CGFloat, height: CGFloat) -> some View {

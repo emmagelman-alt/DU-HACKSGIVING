@@ -10,6 +10,9 @@ struct RootView: View {
     /// The MEDI welcome screen shows when the app opens with no medications (or with `-screen welcome`).
     @State private var welcomePending = AppModel.launchScreen == nil || AppModel.launchScreen == "welcome"
 
+    /// Home before any medication has been added.
+    private var onboarding: Bool { meds.isEmpty && router.tab == .today }
+
     private var showWelcome: Bool {
         welcomePending && (meds.isEmpty || AppModel.launchScreen == "welcome")
     }
@@ -33,7 +36,11 @@ struct RootView: View {
                     }
                 }
                 .safeAreaInset(edge: .bottom, spacing: 0) {
-                    MediTabBar(tab: $router.tab, highlightAdd: meds.isEmpty && router.tab == .today)
+                    MediTabBar(tab: $router.tab, highlightAdd: onboarding)
+                }
+                // During onboarding the sun on Home holds an arrow pointing at the + tab.
+                .overlayPreferenceValue(AddTabBoundsKey.self) { plus in
+                    if onboarding, let plus { SunPointer(target: plus) }
                 }
                 .transition(.opacity)
             }
