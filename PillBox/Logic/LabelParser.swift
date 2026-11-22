@@ -72,12 +72,9 @@ enum LabelParser {
             r.fillDate = d
         }
         // Prescriber
-        if let m = first(#"(?:\bDR\.?\s+|\bDOCTOR\s*:?\s*|PRESCRIBER\s*:?\s*|PRESCRIBED\s+BY\s*:?\s*)([A-Z][A-Z.'\- ]{2,40}?)(?:,?\s*(?:MD|M\.D\.|DO|NP|PA)\b|$|\n)"#, in: upper) {
-            let name = m[1].trimmingCharacters(in: .whitespaces)
-            if !name.isEmpty {
-                r.prescriberName = "Dr. " + titleCase(name.replacingOccurrences(of: "DR. ", with: ""))
-                r.found.insert("prescriber")
-            }
+        if let name = prescriber(in: upper, lines: upperLines) {
+            r.prescriberName = name
+            r.found.insert("prescriber")
         }
         // Pharmacy
         let chains = ["CVS", "WALGREENS", "RITE AID", "WALMART", "KROGER", "TARGET", "COSTCO", "PUBLIX", "SAFEWAY", "GIANT EAGLE"]
@@ -85,18 +82,17 @@ enum LabelParser {
             r.pharmacy = titleCase(lines[i]); r.found.insert("pharmacy")
         }
 
-        // Directions: the "TAKE ..." sentence, which can wrap over a few lines
-        let verbs = #"^(TAKE|GIVE|USE|APPLY|INHALE|PLACE|INSTILL|CHEW|DISSOLVE|INJECT|SPRAY|INSERT|DISSOLVE)\b"#
-        if let start = upperLines.firstIndex(where: { $0.range(of: verbs, options: .regularExpression) != nil }) {
-            var parts = [upperLines[start]]
-            var i = start + 1
-            while i < upperLines.count, parts.count < 4, !isFieldLine(upperLines[i]) {
-                parts.append(upperLines[i]); i += 1
-            }
-            r.directions = sentenceCase(parts.joined(separator: " "))
+        // Directions: the "TAKE ..." sentence, which can wrap over a few lines. The camera sometimes joins
+        // it to the line beside it ("TAB CHEW 2 TABLETS BY"), so the verb can also start partway along.
+        if let directions = findDirections(upperLines) {
+            r.directions = sentenceCase(directions)
             r.found.insert("directions")
         }
-        let dir = r.directions.isEmpty ? upper : r.directions.uppercased()
+        // The dose and the times come from the directions only. Without them, only lines that talk about
+        // dosing count, so a stray "night" elsewhere in view can't add a reminder.
+        let dir = r.directions.isEmpty
+            ? upperLines.filter { has(dosingWords, $0) && !has(#"\b(MAX(IMUM)?|DOSE)\b"#, $0) }.joined(separator: " ")
+            : r.directions.uppercased()
         parseDose(dir, into: &r)
         parseFrequency(dir, into: &r)
         parseInstructions(upper, into: &r)
@@ -111,8 +107,36 @@ enum LabelParser {
     // MARK: - Pieces
 
     private static func isFieldLine(_ l: String) -> Bool {
-        l.range(of: #"^(RX|QTY|QUANTITY|REFILL|EXP|DISCARD|USE BY|USE BEFORE|DR\.?\s|DOCTOR|PRESCRIB|DATE|FILLED|ORIG|MFG|NDC|PHARMACY|CAUTION|WARNING|DESCRIPTION|IMPRINT|PATIENT)"#, options: .regularExpression) != nil
+        l.range(of: #"^(RX|QTY|QUANTITY|REFILL|EXP|DISCARD|USE BY|USE BEFORE|DR\.?\s|DOCTOR|PRESCRIB|PRE?SC?R?I?BE?R\b|PRES(C|CR)?\s*[.:]|PHYSICIAN|PROVIDER|DATE|FILLED|ORIG|MFG|NDC|PHARMACY|CAUTION|WARNING|DESCRIPTION|IMPRINT|PATIENT)"#, options: .regularExpression) != nil
             || l.range(of: #"\d+(\.\d+)?\s*(MG|MCG|IU)\b"#, options: .regularExpression) != nil && !l.hasPrefix("TAKE")
+    }
+
+    private static let verbs = "TAKE|GIVE|USE|APPLY|INHALE|PLACE|INSTILL|CHEW|DISSOLVE|INJECT|SPRAY|INSERT"
+    private static let dosingWords = #"\b(BY MOUTH|ONCE|TWICE|DAILY|TIMES|EVERY|HOURS?|AS NEEDED|BEDTIME|AT NIGHT|NIGHTLY|IN THE MORNING|IN THE EVENING|EACH DAY|PER DAY|WEEKLY)\b"#
+
+    /// "CHEW 2 TABLETS BY / MOUTH ONCE DAILY IN / THE MORNING. MAX / DAILY DOSE: 2" →
+    /// "CHEW 2 TABLETS BY MOUTH ONCE DAILY IN THE MORNING." (the maximum is a limit, not a dose).
+    static func findDirections(_ upperLines: [String]) -> String? {
+        let atStart = "^(\(verbs))\\b"
+        let inside = "\\b(\(verbs))\\s+(\\d|ONE|TWO|THREE|FOUR|HALF|A|AN|AS|BY|EVERY|IN|INTO|ON)\\b"
+        var start: (line: Int, text: String)?
+        if let i = upperLines.firstIndex(where: { has(atStart, $0) }) {
+            start = (i, upperLines[i])
+        } else if let i = upperLines.firstIndex(where: { has(inside, $0) }),
+                  let m = regex(inside)?.firstMatch(in: upperLines[i], range: NSRange(upperLines[i].startIndex..., in: upperLines[i])),
+                  let range = Range(m.range, in: upperLines[i]) {
+            start = (i, String(upperLines[i][range.lowerBound...]))
+        }
+        guard let start else { return nil }
+        var parts = [start.text]
+        var i = start.line + 1
+        while i < upperLines.count, parts.count < 4, !isFieldLine(upperLines[i]) {
+            parts.append(upperLines[i]); i += 1
+        }
+        let text = parts.joined(separator: " ")
+            .replacingOccurrences(of: #"\s*\b(MAX(IMUM)?|DO NOT EXCEED|NOT TO EXCEED)\b.*$"#, with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespaces)
+        return text.count >= 6 ? text : nil
     }
 
     private static let numberWords: [String: Int] = ["ONE": 1, "TWO": 2, "THREE": 3, "FOUR": 4, "FIVE": 5, "A": 1, "AN": 1, "HALF": 1, "1/2": 1]
@@ -147,7 +171,7 @@ enum LabelParser {
         if dir.range(of: #"\b(MORNING|BREAKFAST|IN THE AM|EVERY AM|A\.M\.)\b"#, options: .regularExpression) != nil { parts.append(.morning) }
         if dir.range(of: #"\b(NOON|LUNCH|AFTERNOON|MIDDAY)\b"#, options: .regularExpression) != nil { parts.append(.afternoon) }
         if dir.range(of: #"\b(EVENING|DINNER|SUPPER|IN THE PM|EVERY PM|P\.M\.)\b"#, options: .regularExpression) != nil { parts.append(.evening) }
-        if dir.range(of: #"\b(BEDTIME|AT NIGHT|NIGHTLY|EVERY NIGHT|HS|AT HOUR OF SLEEP)\b"#, options: .regularExpression) != nil { parts.append(.night) }
+        if dir.range(of: #"\b(BEDTIME|AT NIGHT|NIGHTLY|EVERY NIGHT|QHS|AT HOUR OF SLEEP)\b"#, options: .regularExpression) != nil { parts.append(.night) }
         r.dayParts = DayPart.allCases.filter { parts.contains($0) }
 
         if let m = first(#"\bEVERY\s+(\d{1,2})\s*(?:TO\s*\d{1,2}\s*|-\s*\d{1,2}\s*)?HOURS?\b"#, in: dir) ?? first(#"\bQ\s?(\d{1,2})\s?H\b"#, in: dir),
@@ -194,7 +218,6 @@ enum LabelParser {
             (#"DO NOT CRUSH|SWALLOW WHOLE"#, "Swallow whole"),
             (#"DROWSINESS|DROWSY"#, "May cause drowsiness"),
             (#"ALCOHOL"#, "Avoid alcohol"),
-            (#"UNTIL (ALL )?GONE|FINISH ALL|COMPLETE(LY)? FINISH"#, "Finish the whole course"),
             (#"GRAPEFRUIT"#, "Avoid grapefruit"),
             (#"SUNLIGHT|SUN EXPOSURE"#, "Avoid too much sunlight")
         ]
@@ -257,6 +280,83 @@ enum LabelParser {
         if !r.pillShape.isEmpty { r.found.insert("looks") }
     }
 
+    // MARK: Prescriber
+
+    /// The word printed before the prescriber's name. Pharmacies shorten it in many ways:
+    /// PRESCRIBER, PRSCRBR, PRSCBR, PRESCRBR, PRESCR:, PRES:, PRESCRIBED BY, DOCTOR:, PHYSICIAN:, PROVIDER:.
+    /// The name may be on the same line or the next one.
+    private static let prescriberLabel =
+        #"(?:\bPRESCRIBED\s+BY|\bPRESCRIBING\s+(?:DR|DOCTOR|PHYSICIAN|PROVIDER)|\bPRE?SC?R?I?BE?R\b|\bPRE?S(?:CR?)?(?=\s*[.:#])|\b(?:DOCTOR|PHYSICIAN|PROVIDER)(?=\s*:))[\s.:;#\-]*(?:DR\.?\s+)?([A-Z][A-Z.,'\- ]{1,48})"#
+
+    /// "DR. SMITH" or "DR JOHN SMITH": the name must be on the same line, so a street ("OAK DR")
+    /// never picks up the line after it.
+    private static let doctorPrefix = #"\bDR(?:[.:][ \t]*|[ \t]+)([A-Z][A-Z.,'\- ]{1,48})"#
+
+    /// A line that is only a first and last name and a credential: "JOHN SMITH, MD".
+    /// (A bare "PA" isn't enough here: "PITTSBURGH, PA" is a city.)
+    private static let nameWithCredential = #"^[A-Z][A-Z.'\-]*,?\s+[A-Z][A-Z.,'\- ]{1,36}?,?\s+(?:M\.?D|D\.?O|NP|FNP|APRN|CNP|PA-C)\.?$"#
+
+    /// Doctors get "Dr."; nurse practitioners and physician assistants keep their credential instead.
+    private static let credentialRx = #",?\s+(M\.?D|D\.?O|DDS|DMD|DPM|OD|NP|FNP|APRN|CNP|PA-?C?)\.?$"#
+    private static let nonDoctorCredentials: Set<String> = ["NP", "FNP", "APRN", "CNP", "PA", "PA-C", "PAC"]
+
+    static func prescriber(in upper: String, lines upperLines: [String]) -> String? {
+        for pattern in [prescriberLabel, doctorPrefix] {
+            for m in matches(pattern, in: upper) {
+                if let name = prescriberName(m[1]) { return name }
+            }
+        }
+        for line in upperLines where first(nameWithCredential, in: line) != nil {
+            if let name = prescriberName(line) { return name }
+        }
+        return nil
+    }
+
+    /// "SMITH, JOHN MD   QTY: 30" → "Dr. John Smith"; "LEE, KIM NP" → "Kim Lee, NP"; anything that isn't a name → nil.
+    private static func prescriberName(_ raw: String) -> String? {
+        // Stop at another field printed on the same line, or a run of spaces between columns.
+        var s = raw.replacingOccurrences(of: #"(\s{3,}|\s+\b(QTY|QUANTITY|REFILLS?|RX|DATE|FILLED|EXP|NDC|MFG|ORIG|DISCARD|PH|PHONE|TEL|FAX|NPI|DEA|DAW)\b).*$"#,
+                                         with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespaces.union(CharacterSet(charactersIn: ",;:-")))
+        s = s.replacingOccurrences(of: #"^DR\.?\s+"#, with: "", options: .regularExpression)
+        var credential = ""
+        if let m = first(credentialRx, in: s) {
+            credential = m[1].replacingOccurrences(of: ".", with: "")
+            s = s.replacingOccurrences(of: credentialRx, with: "", options: .regularExpression)
+                .trimmingCharacters(in: .whitespaces.union(CharacterSet(charactersIn: ",")))
+        }
+        // "SMITH, JOHN A" → "JOHN A SMITH"
+        if let comma = s.firstIndex(of: ",") {
+            let last = s[..<comma].trimmingCharacters(in: .whitespaces)
+            let rest = s[s.index(after: comma)...].trimmingCharacters(in: .whitespaces.union(CharacterSet(charactersIn: ",")))
+            guard !rest.contains(",") else { return nil }
+            s = rest.isEmpty ? last : rest + " " + last
+        }
+        let words = s.split(separator: " ").map { $0.trimmingCharacters(in: CharacterSet(charactersIn: ".'-")) }
+        guard (1...4).contains(words.count), s.count <= 40,
+              words.allSatisfy({ !$0.isEmpty && $0.allSatisfy { $0.isLetter || "'-.".contains($0) } }),   // O'BRIEN, SMITH-JONES
+              words.contains(where: { $0.count >= 2 }),
+              // Single letters are initials ("MARIA A GARCIA"), even though "A" is a word on labels.
+              !words.contains(where: { $0.count > 1 && (notNameWords.contains($0) || prescriberNotNameWords.contains($0)) })
+        else { return nil }
+        let name = titleCase(s)
+        if nonDoctorCredentials.contains(credential) {
+            return name + ", " + (credential == "PAC" ? "PA-C" : credential)
+        }
+        return "Dr. " + name
+    }
+
+    /// Words from warnings that can follow "DOCTOR" or "PRESCRIBER" but are never a name.
+    private static let prescriberNotNameWords: Set<String> = [
+        "IF", "YOU", "YOUR", "IS", "ARE", "BE", "HAVE", "HAS", "PLEASE", "ASK", "TELL", "CONTACT", "INFORMATION",
+        "INSTRUCTIONS", "DIRECTED", "ORDERS", "OFFICE", "SIGNATURE", "INITIALS", "USE"
+    ]
+
+    /// The prescriber's name without "Dr." or a credential, for comparing with the patient's name.
+    private static func bareName(_ prescriber: String) -> String {
+        prescriber.replacingOccurrences(of: #"^Dr\.\s+|,\s+[A-Z\-]+$"#, with: "", options: .regularExpression)
+    }
+
     // MARK: Patient
 
     /// Words that are never part of a person's name on a label.
@@ -284,7 +384,7 @@ enum LabelParser {
         // Without a labelled name, only trust lines above the drug name, so directions can't be mistaken for one.
         let plain = drugLine.flatMap { idx in upperLines[..<idx].lazy.compactMap { personName($0) }.first }
         guard let name = labelled ?? plain,
-              name.caseInsensitiveCompare(r.prescriberName.replacingOccurrences(of: "Dr. ", with: "")) != .orderedSame else { return }
+              name.caseInsensitiveCompare(bareName(r.prescriberName)) != .orderedSame else { return }
         r.patientName = name
         r.found.insert("patient")
     }
@@ -299,7 +399,7 @@ enum LabelParser {
             .map { $0.trimmingCharacters(in: CharacterSet(charactersIn: ".'-")) }
         guard words.filter({ $0.count >= 2 }).count >= 2,
               !words.contains(where: { notNameWords.contains($0) }),
-              !KnownDrugs.names.contains(where: { s.contains($0) }) else { return nil }
+              !KnownDrugs.containsExact(s) else { return nil }
         if let comma = s.firstIndex(of: ",") {
             let last = s[..<comma].trimmingCharacters(in: .whitespaces)
             let rest = s[s.index(after: comma)...].trimmingCharacters(in: .whitespaces)
@@ -310,46 +410,94 @@ enum LabelParser {
 
     // MARK: Name and strength
 
+    private static let strengthRx = #"(\d+(?:\.\d+)?(?:\s*/\s*\d+(?:\.\d+)?)?)\s*(MG|MCG|GM|G|ML|%|UNITS?|IU)\b"#
+
+    /// Words printed beside a drug's strength: its form and release type.
+    private static let formWords = #"\b(TABS?|TABLETS?|CAPS?|CAPSULES?|CHEW|CHEWABLE|ER|XR|XL|SR|CR|LA|ODT|EC|EXTENDED|DELAYED|RELEASE|ORAL|SUSP(ENSION)?|SOLUTION|SOLN|SYRUP|LIQUID|INHALER|CREAM|OINTMENT|PATCH|SOFTGELS?|GELCAPS?|DROPS|INJ(ECTION)?|PEN|HCL)\b"#
+
+    /// Lines that are never the drug line: directions, counts, dates, limits and warnings.
+    private static let notDrugLine = #"^(TAKE|GIVE|USE|APPLY|INHALE|PLACE|INSTILL|CHEW|DISSOLVE|INJECT|SPRAY|INSERT|QTY|QUANTITY|RX|REFILLS?|DATE|FILLED|EXP|DISCARD|NDC|MFG)\b|\b(BY MOUTH|DAILY|MAX(IMUM)?|DOSE|DO NOT|AVOID|WARNING|CAUTION|MAY CAUSE|IF YOU|CALL|ASK|TIMES|EVERY|HOURS)\b"#
+
+    /// "30 MG" → ("30", "mg", strong). Grams count for little on their own: a stray "8 G" in view is
+    /// far more often noise than a dose.
+    private static func strength(in line: String) -> (amount: String, unit: String, strong: Bool)? {
+        guard let m = first(strengthRx, in: line) else { return nil }
+        let unit: String
+        switch m[2] {
+        case "MG", "MCG": unit = m[2].lowercased()
+        case "G", "GM": unit = "g"
+        case "ML": unit = "mL"
+        default: unit = m[2]
+        }
+        return (m[1].replacingOccurrences(of: " ", with: ""), unit, unit != "g")
+    }
+
+    /// Picks the drug line by score rather than taking the first line with a number, so text read from
+    /// behind the bottle can't win: a real unit (mg, mcg, mL) counts most, then a form word on or under
+    /// it ("CHEW TAB"), then a known drug name on it or the line above.
     /// Returns the index of the line with the drug name, if one was found.
     @discardableResult
     private static func parseNameAndStrength(lines: [String], upperLines: [String], into r: inout ParsedLabel) -> Int? {
-        let strengthRx = #"(\d+(?:\.\d+)?(?:\s*/\s*\d+(?:\.\d+)?)?)\s*(MG|MCG|G|ML|%|UNITS?|IU)\b"#
-        let all = upperLines.joined(separator: "\n")
-        let known = KnownDrugs.names.first { all.range(of: "\\b\($0)\\b", options: .regularExpression) != nil }
+        let usable = upperLines.map { !has(notDrugLine, $0) }
+        let known = upperLines.indices.map { usable[$0] ? KnownDrugs.match(in: upperLines[$0]) : nil }
+        let strengths = upperLines.indices.map { usable[$0] ? strength(in: upperLines[$0]) : nil }
 
-        // Prefer the line with a known drug name, otherwise the first line with a strength that isn't directions.
-        let candidate = upperLines.firstIndex { l in
-            if let known, l.contains(known) { return true }
-            return false
-        } ?? upperLines.firstIndex { l in
-            l.range(of: strengthRx, options: .regularExpression) != nil && !l.hasPrefix("TAKE") && !l.hasPrefix("QTY") && !l.hasPrefix("RX")
-        }
-        guard let idx = candidate else { return nil }
-        let line = upperLines[idx]
-
-        if let m = first(strengthRx, in: line) {
-            let unit = m[2] == "MG" || m[2] == "MCG" || m[2] == "G" || m[2] == "ML" ? m[2].lowercased() : m[2]
-            r.strength = "\(m[1].replacingOccurrences(of: " ", with: "")) \(unit == "ml" ? "mL" : unit)"
-            r.found.insert("strength")
-        } else if idx + 1 < upperLines.count, let m = first(strengthRx, in: upperLines[idx + 1]) {
-            r.strength = "\(m[1]) \(m[2].lowercased())"
-            r.found.insert("strength")
+        var best: (line: Int, score: Int)?
+        for i in upperLines.indices {
+            guard let s = strengths[i] else { continue }
+            var score = s.strong ? 4 : 1
+            let formBelow = i + 1 < upperLines.count && usable[i + 1] && has(formWords, upperLines[i + 1])
+            if has(formWords, upperLines[i]) || formBelow { score += 2 }
+            if known[i] != nil || (i > 0 && known[i - 1] != nil) { score += 4 }
+            if score >= 3, score > (best?.score ?? 0) { best = (i, score) }
         }
 
-        if let known {
-            r.name = titleCase(known)
-        } else {
-            // Words before the strength, e.g. "LISINOPRIL 10 MG TABLET" -> "Lisinopril"
-            let beforeStrength = line.components(separatedBy: CharacterSet.decimalDigits).first ?? line
-            let cleaned = beforeStrength
-                .replacingOccurrences(of: #"\b(TABLETS?|TABS?|CAPSULES?|CAPS?|ORAL|HCL|ER|XR)\b"#, with: "", options: .regularExpression)
-                .trimmingCharacters(in: .whitespaces.union(.punctuationCharacters))
-            r.name = titleCase(cleaned.isEmpty && idx > 0 ? upperLines[idx - 1] : cleaned)
+        var nameLine: Int?
+        if let b = best, let s = strengths[b.line] {
+            r.strength = "\(s.amount) \(s.unit)"
+            r.found.insert("strength")
+            if let k = known[b.line] {
+                r.name = k.name; nameLine = b.line
+            } else if b.line > 0, let k = known[b.line - 1] {
+                r.name = k.name; nameLine = b.line - 1
+            } else {
+                // Words before the strength ("LISINOPRIL 10 MG TABLET"), or the line above when the
+                // strength starts its own line ("QUILLICHEW ER" / "30 MG CHEW").
+                let before = cleanDrugName(upperLines[b.line].components(separatedBy: .decimalDigits).first ?? "")
+                if before.count >= 3 {
+                    r.name = drugCase(before); nameLine = b.line
+                } else if b.line > 0, usable[b.line - 1], !isFieldLine(upperLines[b.line - 1]) {
+                    let above = cleanDrugName(upperLines[b.line - 1])
+                    if above.count >= 3, above.split(separator: " ").count <= 4 {
+                        r.name = drugCase(above); nameLine = b.line - 1
+                    }
+                }
+            }
+        } else if let i = known.firstIndex(where: { $0 != nil }), let k = known[i] {
+            // A known name with no believable strength in view yet.
+            r.name = k.name; nameLine = i
         }
         if !r.name.isEmpty { r.found.insert("name") }
-        if line.range(of: #"\bCAP(SULE)?S?\b"#, options: .regularExpression) != nil, !r.found.contains("dose") { r.form = "capsule" }
-        if line.range(of: #"\bTAB(LET)?S?\b"#, options: .regularExpression) != nil, !r.found.contains("dose") { r.form = "tablet" }
-        return idx
+        if let line = best.map({ upperLines[$0.line] }), !r.found.contains("dose") {
+            if has(#"\bCAP(SULE)?S?\b"#, line) { r.form = "capsule" }
+            if has(#"\bTAB(LET)?S?\b"#, line) { r.form = "tablet" }
+        }
+        return nameLine
+    }
+
+    /// "SERTRALINE HCL TABLET" → "SERTRALINE"; release words like ER stay, since they name the product.
+    private static func cleanDrugName(_ s: String) -> String {
+        s.replacingOccurrences(of: #"\b(TABLETS?|TABS?|CAPSULES?|CAPS?|ORAL|HCL|CHEWABLE|CHEW|SOLUTION|SUSPENSION)\b"#, with: " ", options: .regularExpression)
+            .replacingOccurrences(of: #"[^A-Z\- ]"#, with: " ", options: .regularExpression)
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespaces.union(CharacterSet(charactersIn: "-")))
+    }
+
+    /// "QUILLICHEW ER" → "Quillichew ER": title case, with release words kept in capitals.
+    static func drugCase(_ s: String) -> String {
+        titleCase(s).split(separator: " ").map { w in
+            KnownDrugs.suffixes.contains(w.uppercased()) ? w.uppercased() : String(w)
+        }.joined(separator: " ")
     }
 
     // MARK: - Dates
@@ -394,19 +542,52 @@ enum LabelParser {
 
     // MARK: - Helpers
 
+    /// Compiled patterns, kept because the camera parses several times a second.
+    nonisolated(unsafe) private static var compiled: [String: NSRegularExpression] = [:]
+    private static let compiledLock = NSLock()
+
+    static func regex(_ pattern: String) -> NSRegularExpression? {
+        compiledLock.lock()
+        defer { compiledLock.unlock() }
+        if let rx = compiled[pattern] { return rx }
+        let rx = try? NSRegularExpression(pattern: pattern, options: [.anchorsMatchLines])
+        compiled[pattern] = rx
+        return rx
+    }
+
+    static func has(_ pattern: String, _ text: String) -> Bool {
+        regex(pattern)?.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil
+    }
+
     /// Returns capture groups (index 0 = whole match). Missing groups are "".
     static func first(_ pattern: String, in text: String) -> [String]? {
-        guard let rx = try? NSRegularExpression(pattern: pattern, options: [.anchorsMatchLines]),
+        guard let rx = regex(pattern),
               let m = rx.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) else { return nil }
         return (0..<m.numberOfRanges).map { i in
             Range(m.range(at: i), in: text).map { String(text[$0]) } ?? ""
         }
     }
 
+    /// Every match of `pattern`, each as [whole match, group 1, ...].
+    static func matches(_ pattern: String, in text: String) -> [[String]] {
+        guard let rx = regex(pattern) else { return [] }
+        return rx.matches(in: text, range: NSRange(text.startIndex..., in: text)).map { m in
+            (0..<m.numberOfRanges).map { i in Range(m.range(at: i), in: text).map { String(text[$0]) } ?? "" }
+        }
+    }
+
+    /// "SMITH-JONES" → "Smith-Jones", "O'BRIEN" → "O'Brien" (but "WALGREEN'S" → "Walgreen's").
     static func titleCase(_ s: String) -> String {
         s.lowercased().split(separator: " ").map { w in
             let small = ["of", "and", "the", "for"]
-            return small.contains(String(w)) ? String(w) : w.prefix(1).uppercased() + w.dropFirst()
+            if small.contains(String(w)) { return String(w) }
+            var out = ""
+            var upNext = true
+            for (i, c) in w.enumerated() {
+                out += upNext ? c.uppercased() : String(c)
+                upNext = c == "-" || (c == "'" && i == 1)
+            }
+            return out
         }.joined(separator: " ")
     }
 
@@ -414,22 +595,4 @@ enum LabelParser {
         let lower = s.lowercased()
         return lower.prefix(1).uppercased() + lower.dropFirst()
     }
-}
-
-enum KnownDrugs {
-    /// Common generic names, used to pick out the medication name and to help text recognition.
-    static let names: [String] = [
-        "ATORVASTATIN", "LISINOPRIL", "LEVOTHYROXINE", "METFORMIN", "AMLODIPINE", "METOPROLOL", "OMEPRAZOLE",
-        "SIMVASTATIN", "LOSARTAN", "ALBUTEROL", "GABAPENTIN", "HYDROCHLOROTHIAZIDE", "SERTRALINE", "FUROSEMIDE",
-        "ACETAMINOPHEN", "AMOXICILLIN", "ALPRAZOLAM", "ATENOLOL", "CITALOPRAM", "ESCITALOPRAM", "MONTELUKAST",
-        "ROSUVASTATIN", "PRAVASTATIN", "TRAMADOL", "BUPROPION", "FLUOXETINE", "TRAZODONE", "CARVEDILOL",
-        "PREDNISONE", "PANTOPRAZOLE", "WARFARIN", "CLOPIDOGREL", "IBUPROFEN", "MELOXICAM", "CYCLOBENZAPRINE",
-        "ZOLPIDEM", "DULOXETINE", "VENLAFAXINE", "LAMOTRIGINE", "CLONAZEPAM", "LORAZEPAM", "PROPRANOLOL",
-        "SPIRONOLACTONE", "GLIPIZIDE", "INSULIN", "TAMSULOSIN", "FINASTERIDE", "DOXYCYCLINE", "AZITHROMYCIN",
-        "CEPHALEXIN", "CIPROFLOXACIN", "CETIRIZINE", "LORATADINE", "FAMOTIDINE", "ONDANSETRON", "ESOMEPRAZOLE",
-        "ARIPIPRAZOLE", "QUETIAPINE", "RISPERIDONE", "METHYLPHENIDATE", "AMPHETAMINE", "LITHIUM", "TOPIRAMATE",
-        "VALSARTAN", "DILTIAZEM", "APIXABAN", "RIVAROXABAN", "SITAGLIPTIN", "EMPAGLIFLOZIN", "ALLOPURINOL",
-        "COLCHICINE", "HYDROXYZINE", "BENZONATATE", "NAPROXEN", "OXYCODONE", "HYDROCODONE", "VITAMIN D3",
-        "FOLIC ACID", "POTASSIUM CHLORIDE", "ESTRADIOL", "NORETHINDRONE", "SUMATRIPTAN", "BACLOFEN"
-    ]
 }

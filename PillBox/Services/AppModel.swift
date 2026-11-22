@@ -44,6 +44,19 @@ final class AppRouter {
     func openTakeScreen(slotKey: String, snooze: Bool = false) {
         showSnoozeOnOpen = snooze
         activeSlotKey = slotKey
+        // Remembered on disk too: stopping the alarm on a locked phone, or closing the app, mustn't
+        // let the dose slip by. The screen comes back the next time the app opens.
+        UserDefaults.standard.set(slotKey, forKey: Self.awaitingKey)
+    }
+
+    /// The dose whose alarm was stopped but which hasn't been confirmed or snoozed yet.
+    static let awaitingKey = "awaitingConfirmSlotKey"
+    static var awaitingSlotKey: String? { UserDefaults.standard.string(forKey: awaitingKey) }
+
+    /// Called once a dose is confirmed or snoozed.
+    func doneWithTakeScreen(slotKey: String) {
+        if activeSlotKey == slotKey { activeSlotKey = nil }
+        if Self.awaitingSlotKey == slotKey { UserDefaults.standard.removeObject(forKey: Self.awaitingKey) }
     }
 }
 
@@ -72,13 +85,13 @@ enum DoseActions {
         SnoozeStore.set(slotKey, until: nil)
         try? context.save()
         ReminderService.shared.cancelReminders(for: slotKey)
-        if AppRouter.shared.activeSlotKey == slotKey { AppRouter.shared.activeSlotKey = nil }
+        AppRouter.shared.doneWithTakeScreen(slotKey: slotKey)
     }
 
     static func snooze(slotKey: String, until date: Date, context: ModelContext) {
         SnoozeStore.set(slotKey, until: date)
         Task { await ReminderService.shared.rescheduleAll(context: context) }
-        if AppRouter.shared.activeSlotKey == slotKey { AppRouter.shared.activeSlotKey = nil }
+        AppRouter.shared.doneWithTakeScreen(slotKey: slotKey)
     }
 
     static func slot(for key: String, context: ModelContext) -> DoseSlot? {
@@ -91,5 +104,24 @@ enum DoseActions {
         let partMeds = slots.filter { $0.dayPart == part }.flatMap(\.meds)
         let chosen = partMeds.isEmpty ? Array(meds.prefix(2)) : partMeds
         return chosen.isEmpty ? nil : DoseSlot(day: day, minutes: minutes, meds: chosen)
+    }
+}
+
+/// One-off tidy-ups of medicines saved by older versions of the app.
+@MainActor
+enum SavedDataFixes {
+    /// Older versions added a "Finish the whole course" note to some labels. The note is no longer made,
+    /// so take it off medicines that already have it.
+    static func run(context: ModelContext) {
+        let meds = (try? context.fetch(FetchDescriptor<Medication>())) ?? []
+        var changed = false
+        for med in meds where med.instructions.localizedCaseInsensitiveContains("finish the whole course") {
+            med.instructions = med.instructions
+                .components(separatedBy: " · ")
+                .filter { $0.trimmingCharacters(in: .whitespaces).caseInsensitiveCompare("Finish the whole course") != .orderedSame }
+                .joined(separator: " · ")
+            changed = true
+        }
+        if changed { try? context.save() }
     }
 }

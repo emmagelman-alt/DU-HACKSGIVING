@@ -403,10 +403,14 @@ struct MedEditRow: View {
 }
 
 extension Medi {
-    /// Delete buttons and the compartment of a bottle that expires within a week.
+    /// Delete buttons and the compartment of a bottle that has expired.
     static let danger = Color(hex: 0xED4D4D)
-    /// "Expires" text when the date is close.
+    /// "Expires" text once the date has passed.
     static let expiringText = Color(hex: 0xC93C3C)
+    /// The compartment of a bottle that expires within a week but is still good (the palette's orange).
+    static let warning = Color(hex: 0xFF9F1C)
+    /// "Expires" text when the date is close: a darker orange that stays readable on the white card.
+    static let warningText = Color(hex: 0xB25600)
 }
 
 /// The design's pill-shaped buttons: yellow (go), red (delete) and purple outline.

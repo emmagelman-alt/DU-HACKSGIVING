@@ -27,10 +27,7 @@ enum DemoData {
             memberID: "1EG4-TE5-MK72",
             conditions: [Item(title: "Type 2 diabetes"), Item(title: "High cholesterol"), Item(title: "High blood pressure")],
             allergies: [Item(title: "Sulfa drugs", detail: "Rash and swelling")],
-            pastMeds: [Item(title: "Simvastatin 20 mg", detail: "Stopped 2024")],
-            emergencyName: "Alex Rivera",
-            emergencyRelation: "Son",
-            emergencyPhone: "(412) 555-0199"
+            pastMeds: [Item(title: "Simvastatin 20 mg", detail: "Stopped 2024")]
         ).save()
         let today = Calendar.current.startOfDay(for: Date())
         func day(_ offset: Int) -> Date { Calendar.current.date(byAdding: .day, value: offset, to: today)! }
@@ -89,7 +86,6 @@ enum DemoData {
         amoxicillin.minHoursApart = 8
         amoxicillin.timesPerDay = 3
         amoxicillin.dayParts = []
-        amoxicillin.instructions = "Finish the whole course"
         amoxicillin.colorIndex = 2
         amoxicillin.pillShape = "capsule"; amoxicillin.pillColor = "pink and red"
         amoxicillin.prescriber = chen

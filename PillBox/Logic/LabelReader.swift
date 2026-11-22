@@ -10,7 +10,9 @@ enum LabelReader {
             let request = VNRecognizeTextRequest()
             request.recognitionLevel = .accurate
             request.usesLanguageCorrection = true
-            request.customWords = KnownDrugs.names.map { $0.capitalized }
+            request.recognitionLanguages = ["en-US"]
+            // Drug names aren't dictionary words; listing them stops "correction" into ordinary words.
+            request.customWords = KnownDrugs.displayNames + KnownDrugs.names
             let handler = VNImageRequestHandler(cgImage: cg, orientation: orientation)
             try handler.perform([request])
             let observations = request.results ?? []

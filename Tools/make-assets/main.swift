@@ -1,4 +1,4 @@
-// Draws the sample pharmacy label images and the app icon into PillBox/Assets.xcassets.
+// Draws the sample pharmacy label images into PillBox/Assets.xcassets.
 // Run from the repo root:
 //   swiftc -o /tmp/make-assets Tools/make-assets/main.swift PillBox/Demo/SampleLabels.swift && /tmp/make-assets
 import AppKit
@@ -72,29 +72,6 @@ for label in SampleLabel.all {
     try! data.write(to: URL(fileURLWithPath: "design/sample-labels/\(label.asset).png"))
 }
 
-// App icon: a teal tile with a 2 x 2 pill box and a check mark.
-let icon = png(width: 1024, height: 1024) { r in
-    let g = NSGradient(starting: NSColor(red: 0.10, green: 0.62, blue: 0.66, alpha: 1), ending: NSColor(red: 0.03, green: 0.36, blue: 0.45, alpha: 1))!
-    g.draw(in: r, angle: -90)
-    let box = CGRect(x: 192, y: 232, width: 640, height: 560)
-    NSColor.white.setFill()
-    NSBezierPath(roundedRect: box, xRadius: 90, yRadius: 90).fill()
-    let colors: [NSColor] = [NSColor(red: 0.98, green: 0.62, blue: 0.20, alpha: 1), NSColor(red: 0.20, green: 0.62, blue: 0.95, alpha: 1),
-                             NSColor(red: 0.62, green: 0.38, blue: 0.90, alpha: 1), NSColor(red: 0.25, green: 0.30, blue: 0.62, alpha: 1)]
-    for i in 0..<4 {
-        let cell = CGRect(x: 232 + CGFloat(i % 2) * 290, y: 272 + CGFloat(i / 2) * 250, width: 270, height: 230)
-        colors[i].withAlphaComponent(0.18).setFill()
-        NSBezierPath(roundedRect: cell, xRadius: 50, yRadius: 50).fill()
-        colors[i].setFill()
-        NSBezierPath(roundedRect: CGRect(x: cell.midX - 70, y: cell.midY - 30, width: 140, height: 60), xRadius: 30, yRadius: 30).fill()
-    }
-}
-let iconDir = "\(root)/AppIcon.appiconset"
-try! icon.write(to: URL(fileURLWithPath: "\(iconDir)/AppIcon.png"))
-try! """
-{
-  "images" : [ { "filename" : "AppIcon.png", "idiom" : "universal", "platform" : "ios", "size" : "1024x1024" } ],
-  "info" : { "author" : "xcode", "version" : 1 }
-}
-""".write(toFile: "\(iconDir)/Contents.json", atomically: true, encoding: .utf8)
-print("Wrote \(SampleLabel.all.count) labels and the app icon.")
+// The app icon is no longer drawn here. It comes from the Figma frame "App icon on blush";
+// see Tools/flatten-app-icon.swift.
+print("Wrote \(SampleLabel.all.count) labels.")

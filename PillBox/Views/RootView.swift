@@ -44,12 +44,15 @@ struct RootView: View {
         .sheet(isPresented: $router.showSettings) { SettingsView() }
         .sheet(isPresented: $router.showAlerts) { AlertsView() }
         .task {
+            SavedDataFixes.run(context: context)
             // On first launch, ask for alarm and notification permission after START, not over the welcome screen.
             if !showWelcome { await ReminderService.shared.requestPermissions() }
             await ReminderService.shared.rescheduleAll(context: context)
             ScreenRoutes.apply(AppModel.launchScreen, context: context)
             checkForDueDose()
         }
+        // A dose alarm that starts ringing while MEDI is open covers the screen straight away.
+        .task { await ReminderService.shared.watchRingingAlarms() }
         .onReceive(Timer.publish(every: 20, on: .main, in: .common).autoconnect()) { _ in checkForDueDose() }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
@@ -81,6 +84,15 @@ struct RootView: View {
     /// If a dose is due while the app is open, cover the screen until it's confirmed or snoozed.
     private func checkForDueDose() {
         guard router.activeSlotKey == nil, AppModel.launchScreen == nil else { return }
+        // An alarm that was stopped (perhaps on the Lock Screen, without opening the app) comes back first.
+        // This also catches test reminders, which aren't at a regular dose time.
+        if let key = AppRouter.awaitingSlotKey {
+            if let slot = DoseActions.slot(for: key, context: context), Scheduler.status(of: slot, logs: logs) == .due {
+                router.openTakeScreen(slotKey: key)
+                return
+            }
+            UserDefaults.standard.removeObject(forKey: AppRouter.awaitingKey)
+        }
         let due = Scheduler.slots(on: Date(), meds: meds).first { Scheduler.status(of: $0, logs: logs) == .due }
         if let due { router.openTakeScreen(slotKey: due.key) }
     }

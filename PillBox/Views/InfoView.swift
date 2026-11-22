@@ -19,9 +19,6 @@ struct HealthProfile: Codable, Equatable {
     var conditions: [Item] = []
     var allergies: [Item] = []
     var pastMeds: [Item] = []
-    var emergencyName = ""
-    var emergencyRelation = ""
-    var emergencyPhone = ""
 
     static func decode(_ data: Data) -> HealthProfile {
         (try? JSONDecoder().decode(HealthProfile.self, from: data)) ?? HealthProfile()
@@ -50,11 +47,10 @@ struct HealthProfile: Codable, Equatable {
 }
 
 /// "07 Info": who the person is, insurance, conditions, allergies, medications, providers,
-/// pharmacy and emergency contact, in one scrolling page.
+/// and pharmacy, in one scrolling page.
 struct InfoView: View {
     @Environment(AppRouter.self) private var router
     @Environment(\.modelContext) private var context
-    @Environment(\.openURL) private var openURL
     @Query(sort: \Medication.name) private var meds: [Medication]
     @Query(sort: \Prescriber.name) private var prescribers: [Prescriber]
     @AppStorage("patientName") private var patientName = ""
@@ -81,7 +77,6 @@ struct InfoView: View {
                         .editable { editing = true }
                     providersCard
                     pharmacyCard
-                    emergencyCard
                     moreCard
                 }
                 .padding(.horizontal, 20)
@@ -237,48 +232,6 @@ struct InfoView: View {
                 InfoRow(title: name, first: i == 0)
             }
         }
-    }
-
-    private var emergencyCard: some View {
-        let p = profile
-        return VStack(alignment: .leading, spacing: 14) {
-            Text("Emergency contact")
-                .font(.karla(24, .bold))
-                .foregroundStyle(Medi.ink)
-            Button { editing = true } label: {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(p.emergencyName.isEmpty ? "Not added yet" : p.emergencyName)
-                        .font(.karla(21, .semibold))
-                        .foregroundStyle(p.emergencyName.isEmpty ? Medi.inkSecondary : Medi.ink)
-                    if !p.emergencyRelation.isEmpty {
-                        Text(p.emergencyRelation).font(.karla(17)).foregroundStyle(Medi.inkSecondary)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityHint("Edit your emergency contact")
-
-            let digits = p.emergencyPhone.filter { "0123456789+".contains($0) }
-            Button {
-                if digits.isEmpty { editing = true } else if let url = URL(string: "tel:\(digits)") { openURL(url) }
-            } label: {
-                HStack(spacing: 10) {
-                    if !digits.isEmpty { Image("icon-phone") }
-                    Text(digits.isEmpty ? "Add a contact" : "Call").font(.karla(22, .bold))
-                }
-                .foregroundStyle(Medi.ink)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 18)
-                .background(Medi.accent, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(digits.isEmpty ? "Add an emergency contact" : "Call \(p.emergencyName)")
-        }
-        .padding(20)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .mediCard(cornerRadius: 20)
     }
 
     /// Not in the Figma frame: the old Info tab's settings and alerts need a home.
@@ -452,13 +405,6 @@ struct ProfileEditView: View {
                             detailHint: "Reaction (optional)", add: "Add an allergy")
                 itemSection("Past medications", items: $draft.pastMeds, titleHint: "Medication",
                             detailHint: "When you stopped (optional)", add: "Add a past medication")
-                Section("Emergency contact") {
-                    TextField("Name", text: $draft.emergencyName)
-                    TextField("Relationship, for example Son", text: $draft.emergencyRelation)
-                    TextField("Phone", text: $draft.emergencyPhone)
-                        .keyboardType(.phonePad)
-                        .textContentType(.telephoneNumber)
-                }
             }
             .navigationTitle("My info")
             .navigationBarTitleDisplayMode(.inline)
@@ -520,9 +466,6 @@ struct ProfileEditView: View {
         p.conditions = clean(p.conditions)
         p.allergies = clean(p.allergies)
         p.pastMeds = clean(p.pastMeds)
-        p.emergencyName = clean(p.emergencyName)
-        p.emergencyRelation = clean(p.emergencyRelation)
-        p.emergencyPhone = clean(p.emergencyPhone)
         p.save()
         patientName = clean(name)
         dismiss()

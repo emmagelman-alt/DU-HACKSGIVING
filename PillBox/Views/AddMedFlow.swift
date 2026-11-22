@@ -45,112 +45,6 @@ struct AddMedView: View {
 
 // MARK: - Take scan page
 
-/// What the scan page is looking for, in the order shown under the camera.
-enum ScanField: CaseIterable {
-    case name, dosage, expiration, time, provider
-
-    /// Parser keys that count as finding this field.
-    var keys: [String] {
-        switch self {
-        case .name: ["name"]
-        case .dosage: ["strength", "dose"]
-        case .expiration: ["expiration"]
-        case .time: ["frequency"]
-        case .provider: ["prescriber"]
-        }
-    }
-}
-
-/// Collects label text as the bottle turns in front of the camera. Each new line is placed next to
-/// the lines it was seen with, the whole set is parsed again, and a field is kept once it's found.
-@MainActor
-@Observable
-final class ScanSession {
-    private(set) var lines: [String] = []
-    private(set) var label = ParsedLabel()
-    private var seen: Set<String> = []
-
-    func has(_ field: ScanField) -> Bool { field.keys.contains { label.found.contains($0) } }
-    var isComplete: Bool { ScanField.allCases.allSatisfy(has) }
-    var foundCount: Int { ScanField.allCases.filter(has).count }
-
-    func reset() {
-        lines = []
-        seen = []
-        label = ParsedLabel()
-    }
-
-    /// One camera frame's text, top to bottom.
-    func add(_ frame: [String]) {
-        var changed = false
-        var anchor: Int?
-        for raw in frame {
-            let line = raw.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
-                .trimmingCharacters(in: .whitespaces)
-            guard line.count >= 2 else { continue }
-            let key = line.uppercased()
-            if seen.contains(key) {
-                anchor = lines.firstIndex { $0.uppercased() == key }
-                continue
-            }
-            seen.insert(key)
-            let at = anchor.map { $0 + 1 } ?? lines.count
-            lines.insert(line, at: min(at, lines.count))
-            anchor = at
-            changed = true
-        }
-        guard changed, lines.count < 300 else { return }
-        absorb(LabelParser.parse(lines: lines))
-    }
-
-    /// One whole photo's text. Its lines were already added a few at a time; parsing the photo on its own
-    /// as well catches anything that reads better without the other photos' lines mixed in.
-    func addPhoto(_ photoLines: [String]) {
-        add(photoLines)
-        absorb(LabelParser.parse(lines: photoLines))
-    }
-
-    /// Keeps the first value found for each field, so a blurry later frame can't undo it.
-    private func absorb(_ p: ParsedLabel) {
-        var l = label
-        func newly(_ key: String) -> Bool { p.found.contains(key) && !l.found.contains(key) }
-        if newly("name") { l.name = p.name; l.found.insert("name") }
-        if newly("strength") { l.strength = p.strength; l.found.insert("strength") }
-        if newly("dose") { l.pillsPerDose = p.pillsPerDose; l.form = p.form; l.found.insert("dose") }
-        else if !l.found.contains("dose") { l.form = p.form }
-        if newly("frequency") {
-            l.frequency = p.frequency
-            l.timesPerDay = p.timesPerDay
-            l.intervalHours = p.intervalHours
-            l.minHoursApart = p.minHoursApart
-            l.dayParts = p.dayParts
-            l.weekdays = p.weekdays
-            l.found.insert("frequency")
-        }
-        if newly("expiration") { l.expiration = p.expiration; l.found.insert("expiration") }
-        if newly("prescriber") { l.prescriberName = p.prescriberName; l.found.insert("prescriber") }
-        if newly("patient") { l.patientName = p.patientName; l.found.insert("patient") }
-        if newly("looks") {
-            l.pillShape = p.pillShape
-            l.pillColor = p.pillColor
-            l.found.insert("looks")
-        }
-        // The score line and imprint can be on a different side of the bottle from the shape.
-        if p.pillScored { l.pillScored = true }
-        if l.pillImprint.isEmpty { l.pillImprint = p.pillImprint }
-        if l.pillColor.isEmpty { l.pillColor = p.pillColor }
-        if newly("rx") { l.rxNumber = p.rxNumber; l.found.insert("rx") }
-        if newly("quantity") { l.quantity = p.quantity; l.found.insert("quantity") }
-        if newly("refills") { l.refills = p.refills; l.found.insert("refills") }
-        if newly("pharmacy") { l.pharmacy = p.pharmacy; l.found.insert("pharmacy") }
-        if newly("directions") { l.directions = p.directions; l.found.insert("directions") }
-        if l.fillDate == nil { l.fillDate = p.fillDate }
-        l.instructions = Array(Set(l.instructions + p.instructions)).sorted()
-        l.rawText = p.rawText
-        label = l
-    }
-}
-
 struct TakeScanView: View {
     var onComplete: (MedDraft, UIImage?) -> Void
 
@@ -201,8 +95,9 @@ struct TakeScanView: View {
             guard done, !finished else { return }
             finished = true
             UINotificationFeedbackGenerator().notificationOccurred(.success)
+            // A moment more of reading lets the votes settle (and catches the pill count) before moving on.
             Task {
-                try? await Task.sleep(for: .milliseconds(900))
+                try? await Task.sleep(for: .milliseconds(1300))
                 finish()
             }
         }
@@ -491,7 +386,7 @@ struct LiveTextScanner: UIViewControllerRepresentable {
 
     func makeUIViewController(context: Context) -> DataScannerViewController {
         let scanner = DataScannerViewController(
-            recognizedDataTypes: [.text()],
+            recognizedDataTypes: [.text(languages: ["en-US"])],
             qualityLevel: .accurate,
             recognizesMultipleItems: true,
             isHighFrameRateTrackingEnabled: false,

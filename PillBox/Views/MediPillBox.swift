@@ -2,7 +2,7 @@ import SwiftData
 import SwiftUI
 
 /// "pillbox base": one compartment per medication, two across. A medication whose bottle
-/// expires within one week (or has expired) turns red ("pillbox with expiring meds").
+/// expires within one week turns orange, and red only once it has actually expired.
 struct MediPillBoxView: View {
     @Query(sort: \Medication.createdAt) private var meds: [Medication]
     @State private var selected: Medication?
@@ -18,7 +18,7 @@ struct MediPillBoxView: View {
                         Button { selected = med } label: { compartment(med) }
                             .buttonStyle(.plain)
                             .accessibilityLabel(med.displayName)
-                            .accessibilityValue([med.pillDescription, MedText.isExpiringSoon(med) ? "Expiring soon" : ""]
+                            .accessibilityValue([med.pillDescription, MedText.expiryWarning(med)?.spoken ?? ""]
                                 .filter { !$0.isEmpty }.joined(separator: ". "))
                     } else {
                         Color.clear
@@ -40,10 +40,10 @@ struct MediPillBoxView: View {
     }
 
     private func compartment(_ med: Medication) -> some View {
-        let expiring = MedText.isExpiringSoon(med)
+        let warning = MedText.expiryWarning(med)
         return VStack(spacing: 0) {
             // A line drawing of the pill itself: its shape, score line and imprint from the label.
-            PillOutline(med: med, size: 100, fill: Medi.ink.opacity(expiring ? 0.2 : 0.12))
+            PillOutline(med: med, size: 100, fill: Medi.ink.opacity(warning == nil ? 0.12 : 0.2))
                 .padding(.top, 10)
             Text(med.name)
                 .font(.karla(24))
@@ -55,8 +55,8 @@ struct MediPillBoxView: View {
         }
         .frame(width: 155, height: 155)
         .background {
-            // Glass, or solid red when a bottle expires within a week.
-            if expiring { RoundedRectangle(cornerRadius: 32, style: .continuous).fill(Medi.danger) }
+            // Glass, solid orange when a bottle expires within a week, and solid red once it has expired.
+            if let warning { RoundedRectangle(cornerRadius: 32, style: .continuous).fill(warning.fill) }
         }
         .mediCard()
     }
@@ -90,7 +90,7 @@ struct MedDetailCard: View {
                 MedEditRow(text: "Dosage: " + MedText.dosage(med)) { edit(.dosage) }
                 MedEditRow(text: "Time: " + MedText.times(for: med)) { edit(.time) }
                 MedEditRow(text: "Expires: " + MedText.date(expiry),
-                           color: MedText.isExpiringSoon(med) ? Medi.expiringText : Medi.ink) { edit(.expiration) }
+                           color: MedText.expiryWarning(med)?.text ?? Medi.ink) { edit(.expiration) }
                 MedEditRow(text: "Provider: " + (med.prescriber?.name ?? "x")) { edit(.provider) }
             } buttons: {
                 MediButton(title: "DELETE MED", style: .stop) { confirmDelete = true }
@@ -137,10 +137,24 @@ extension PrescriberMessage: Identifiable {
     var id: String { "\(medicationID)-\(reason.rawValue)" }
 }
 
+/// How a pill box compartment warns about its bottle's date. Orange means "expires soon, still fine to
+/// take"; red is kept for a bottle that has actually expired, so nobody throws out good medicine early.
+enum ExpiryWarning {
+    case soon, expired
+
+    var fill: Color { self == .expired ? Medi.danger : Medi.warning }
+    var text: Color { self == .expired ? Medi.expiringText : Medi.warningText }
+    var spoken: String { self == .expired ? "Expired" : "Expiring soon" }
+}
+
 extension MedText {
-    /// Expires within one week (or already expired): the compartment turns red.
-    static func isExpiringSoon(_ med: Medication) -> Bool {
-        guard let date = med.activeBottles.first?.expirationDate else { return false }
-        return ExpiryLevel.level(for: date) >= .week
+    /// Expires within one week (including today): orange. Past the date: red. Otherwise nil.
+    static func expiryWarning(_ med: Medication, now: Date = Date()) -> ExpiryWarning? {
+        guard let date = med.activeBottles.first?.expirationDate else { return nil }
+        switch ExpiryLevel.level(for: date, now: now) {
+        case .expired: return .expired
+        case .week, .today: return .soon
+        default: return nil
+        }
     }
 }

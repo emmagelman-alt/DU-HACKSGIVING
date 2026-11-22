@@ -26,6 +26,9 @@ final class ReminderService: NSObject, UNUserNotificationCenterDelegate {
 
     var alarmsAllowed: Bool { AlarmManager.shared.authorizationState == .authorized }
 
+    /// Which dose each alarm scheduled since launch belongs to, so a ringing alarm can be matched to its dose.
+    private var alarmSlots: [UUID: String] = [:]
+
     func configure() {
         let center = UNUserNotificationCenter.current()
         center.delegate = self
@@ -107,7 +110,34 @@ final class ReminderService: NSObject, UNUserNotificationCenterDelegate {
             secondaryIntent: TakenIntent(slotKey: slot.key),
             sound: .default
         )
+        alarmSlots[Self.alarmID(slot.key)] = slot.key
         _ = try? await AlarmManager.shared.schedule(id: Self.alarmID(slot.key), configuration: config)
+    }
+
+    // MARK: - Ringing alarms
+
+    /// iOS draws a ringing alarm itself: full screen on the Lock Screen, but only a banner at the top when
+    /// the phone is unlocked, and apps can't change that. So whenever MEDI is open (including right after
+    /// someone taps that banner), it covers its own screen with the full-screen "Time for your meds" page
+    /// the moment an alarm starts ringing, instead of waiting for the next check.
+    func watchRingingAlarms() async {
+        for await alarms in AlarmManager.shared.alarmUpdates {
+            let router = AppRouter.shared
+            for alarm in alarms where alarm.state == .alerting {
+                guard let key = slotKey(forAlarm: alarm.id) else { continue }
+                if router.activeSlotKey == nil || router.activeSlotKey == key {
+                    router.openTakeScreen(slotKey: key)
+                }
+                break
+            }
+        }
+    }
+
+    private func slotKey(forAlarm id: UUID) -> String? {
+        if let key = alarmSlots[id] { return key }
+        // The test reminder is kept across launches without being scheduled again.
+        if let test = UserDefaults.standard.string(forKey: "testSlotKey"), Self.alarmID(test) == id { return test }
+        return nil
     }
 
     func scheduleNotifications(for slot: DoseSlot, at date: Date) {
@@ -240,7 +270,9 @@ struct TakenIntent: LiveActivityIntent {
     }
 }
 
-/// Stopping the alarm opens the confirm screen. Backup reminders keep coming until the person confirms.
+/// Sliding to stop the alarm opens the app on the confirm screen, which can't be closed until the dose
+/// is confirmed (or snoozed). On a locked phone iOS asks for Face ID first; if the person doesn't unlock,
+/// the screen is waiting the next time the app opens, and backup reminders keep coming until they confirm.
 struct OpenDoseIntent: LiveActivityIntent {
     static var title: LocalizedStringResource = "Open dose confirmation"
     static var openAppWhenRun = true
