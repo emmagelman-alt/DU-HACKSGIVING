@@ -85,6 +85,8 @@ struct InfoView: View {
             }
             // Keeps scrolled cards from showing behind the clock and battery.
             .safeAreaInset(edge: .top, spacing: 0) { Color.clear.frame(height: 0).background(Medi.backgroundTop) }
+            // Room for the bottom bar, which otherwise covers the last row of the More card (Settings).
+            .contentMargins(.bottom, 80, for: .scrollContent)
             .background(MediBackground())
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: Medication.self) { MedicationDetailView(med: $0) }

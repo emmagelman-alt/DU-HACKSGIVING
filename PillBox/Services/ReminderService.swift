@@ -2,6 +2,7 @@ import AlarmKit
 import AppIntents
 import CryptoKit
 import Foundation
+import os
 import SwiftData
 import SwiftUI
 import UserNotifications
@@ -28,6 +29,10 @@ final class ReminderService: NSObject, UNUserNotificationCenterDelegate {
 
     /// Which dose each alarm scheduled since launch belongs to, so a ringing alarm can be matched to its dose.
     private var alarmSlots: [UUID: String] = [:]
+    /// The reschedule in progress, if any.
+    private var rescheduling: Task<Void, Never>?
+
+    private static let log = Logger(subsystem: "com.emmagelman.PillBox", category: "reminders")
 
     func configure() {
         let center = UNUserNotificationCenter.current()
@@ -47,17 +52,41 @@ final class ReminderService: NSObject, UNUserNotificationCenterDelegate {
 
     // MARK: - Scheduling
 
+    /// Clears the dose alarms and notifications and sets them again from the current meds, doses taken and
+    /// snoozes. Runs one at a time: a new request waits for the one in progress, so two runs never clear and
+    /// set alarms over each other.
     func rescheduleAll(context: ModelContext) async {
+        let previous = rescheduling
+        let run = Task {
+            await previous?.value
+            await self.rescheduleNow(context: context)
+        }
+        rescheduling = run
+        await run.value
+    }
+
+    private func rescheduleNow(context: ModelContext) async {
         let meds = (try? context.fetch(FetchDescriptor<Medication>())) ?? []
         let logs = (try? context.fetch(FetchDescriptor<DoseLog>())) ?? []
         let now = Date()
         let center = UNUserNotificationCenter.current()
 
-        // Clear what we scheduled before, except a test reminder that hasn't gone off yet.
+        // The test reminder isn't at a regular dose time, so the dose loop below never reaches it.
         let testKey = UserDefaults.standard.string(forKey: "testSlotKey")
-        let testPending = (UserDefaults.standard.object(forKey: "testFireDate") as? Date).map { $0 > now.addingTimeInterval(-15 * 60) } ?? false
+        let testTaken = testKey.map { key in logs.contains { $0.slotKey == key } } ?? false
+        let testSnooze = testTaken ? nil : testKey.flatMap(SnoozeStore.until)
+        // A snoozed test reminder is set again for the snooze time, like any dose.
+        let testSnoozedUntil = testSnooze.flatMap { $0 > now ? $0 : nil }
+        // Otherwise it's left alone for 15 minutes after it last rang: its alarm and backups are already set.
+        let lastTestRing = [UserDefaults.standard.object(forKey: "testFireDate") as? Date, testSnooze].compactMap { $0 }.max()
+        let testPending = !testTaken && testSnoozedUntil == nil
+            && (lastTestRing.map { $0 > now.addingTimeInterval(-15 * 60) } ?? false)
         let keepID = testPending ? testKey.map(Self.alarmID) : nil
-        for alarm in (try? AlarmManager.shared.alarms) ?? [] where alarm.id != keepID {
+
+        // Clear what we scheduled before. Alarms ringing right now are handled dose by dose below.
+        let alarms = (try? AlarmManager.shared.alarms) ?? []
+        let ringing = Set(alarms.filter { $0.state == .alerting }.map(\.id))
+        for alarm in alarms where alarm.id != keepID && !ringing.contains(alarm.id) {
             try? AlarmManager.shared.cancel(id: alarm.id)
         }
         let pending = await center.pendingNotificationRequests()
@@ -67,22 +96,41 @@ final class ReminderService: NSObject, UNUserNotificationCenterDelegate {
         })
 
         // Doses for today and tomorrow.
+        var doseKeys: Set<String> = []
         for offset in 0...1 {
             let day = Calendar.current.date(byAdding: .day, value: offset, to: now)!
             for slot in Scheduler.slots(on: day, meds: meds) {
-                let status = Scheduler.status(of: slot, logs: logs, now: now)
+                doseKeys.insert(slot.key)
                 let fireDate: Date
-                switch status {
+                var snoozed = false
+                switch Scheduler.status(of: slot, logs: logs, now: now) {
                 case .taken, .missed: continue
-                case .snoozed(let until): fireDate = until
+                case .snoozed(let until): fireDate = until; snoozed = true
                 case .due: fireDate = now.addingTimeInterval(60)
                 case .upcoming: fireDate = slot.date
                 }
-                await scheduleAlarm(for: slot, at: fireDate)
-                scheduleNotifications(for: slot, at: fireDate)
+                await schedule(slot, at: fireDate, snoozed: snoozed, ringing: ringing)
             }
         }
+        if let testKey, let testSnoozedUntil, !doseKeys.contains(testKey),
+           let slot = DoseActions.slot(for: testKey, context: context) {
+            await schedule(slot, at: testSnoozedUntil, snoozed: true, ringing: ringing)
+        }
         scheduleExpiryWarnings(meds: meds, now: now)
+    }
+
+    /// Sets one dose's alarm and its backup notifications. An alarm that's ringing right now keeps ringing,
+    /// unless the dose has just been snoozed: then it's stopped and set again for the snooze time.
+    private func schedule(_ slot: DoseSlot, at date: Date, snoozed: Bool, ringing: Set<UUID>) async {
+        let id = Self.alarmID(slot.key)
+        alarmSlots[id] = slot.key
+        let isRinging = ringing.contains(id)
+        if isRinging && snoozed {
+            try? AlarmManager.shared.stop(id: id)
+            try? AlarmManager.shared.cancel(id: id)
+        }
+        if !isRinging || snoozed { await scheduleAlarm(for: slot, at: date) }
+        scheduleNotifications(for: slot, at: date)
     }
 
     func scheduleAlarm(for slot: DoseSlot, at date: Date) async {
@@ -110,8 +158,26 @@ final class ReminderService: NSObject, UNUserNotificationCenterDelegate {
             secondaryIntent: TakenIntent(slotKey: slot.key),
             sound: .default
         )
-        alarmSlots[Self.alarmID(slot.key)] = slot.key
-        _ = try? await AlarmManager.shared.schedule(id: Self.alarmID(slot.key), configuration: config)
+        let id = Self.alarmID(slot.key)
+        let time = date.formatted(date: .abbreviated, time: .standard)
+        alarmSlots[id] = slot.key
+        do {
+            _ = try await AlarmManager.shared.schedule(id: id, configuration: config)
+        } catch {
+            // This dose's earlier alarm may still be on its way out (just stopped or cancelled), and the new
+            // one uses the same ID. Clear it and try once more instead of silently going without an alarm.
+            Self.log.error("Alarm for \(slot.key, privacy: .public) at \(time, privacy: .public) failed, retrying: \(error.localizedDescription, privacy: .public)")
+            try? AlarmManager.shared.stop(id: id)
+            try? AlarmManager.shared.cancel(id: id)
+            try? await Task.sleep(for: .milliseconds(300))
+            do {
+                _ = try await AlarmManager.shared.schedule(id: id, configuration: config)
+            } catch {
+                Self.log.error("Alarm for \(slot.key, privacy: .public) at \(time, privacy: .public) failed again: \(error.localizedDescription, privacy: .public)")
+                return
+            }
+        }
+        Self.log.info("Alarm set for \(slot.key, privacy: .public) at \(time, privacy: .public)")
     }
 
     // MARK: - Ringing alarms
@@ -125,6 +191,8 @@ final class ReminderService: NSObject, UNUserNotificationCenterDelegate {
             let router = AppRouter.shared
             for alarm in alarms where alarm.state == .alerting {
                 guard let key = slotKey(forAlarm: alarm.id) else { continue }
+                // An alarm that was just snoozed can still show as ringing for a moment before it's stopped.
+                if let until = SnoozeStore.until(key), until.timeIntervalSinceNow > 5 { continue }
                 if router.activeSlotKey == nil || router.activeSlotKey == key {
                     router.openTakeScreen(slotKey: key)
                 }
