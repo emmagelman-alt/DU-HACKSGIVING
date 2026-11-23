@@ -1,0 +1,27 @@
+My app that I built was actually built for a hackathon, but I wanted to develop it further, and so I'm using it for this project. Medi is a medication tracker specifically designed for elderly users.
+
+The UI is extremely simple, and it very efficiently does a couple tasks:
+- Tracking your medication
+- Making uploading your medication very easy
+- Setting reminders that are impossible to ignore or snooze indefinitely
+
+Something that's surviving about mobile app development was how much easier it is to run on iPhone when you build the entire project in Swift.
+
+The other thing that I realized was that setting up the backend with a very basic generic UI and having it spend more time making the things work with the features that you want, rather than having to go at it from a design-first lens, made it much easier to iterate on later, as I was able to design out all the screens manually in Figma and then have it update everything in the app screen, but the functionality was present from the start.
+
+TO RUN:
+
+What you need: a Mac with Xcode 26. To run it on a phone you also need an iPhone on iOS 26, a cable and an Apple Account (a free one works). Nothing needs to be installed.
+Get the code: the git clone command, and which Xcode project to open.
+Run it in the simulator:
+pick the scheme and a simulator, then press Run
+tap START and allow alarms
+load the demo medications
+try a sample-label scan and a test reminder
+a note on why the alarm buttons may not work in the simulator
+Run it on your iPhone:
+trust the computer
+set your Team and change the bundle ID
+turn on Developer Mode and trust the developer profile
+allow the permissions
+the free-account limits (the app stops opening after 7 days, and only 3 apps at once)
