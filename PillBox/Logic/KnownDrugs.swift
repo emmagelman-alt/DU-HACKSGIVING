@@ -1,7 +1,7 @@
 import Foundation
 
 /// Medication names MEDI knows. They pick out the drug name on a label, fix small misreads
-/// ("QUILLICHI WER" → "Quillichew ER"), and help text recognition on photos.
+/// ("LISINOPRLL" → "Lisinopril"), and help text recognition on photos.
 enum KnownDrugs {
     static let generics: [String] = [
         "Acetaminophen", "Acyclovir", "Albuterol", "Alendronate", "Allopurinol", "Alprazolam", "Amiodarone",

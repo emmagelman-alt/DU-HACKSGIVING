@@ -21,7 +21,7 @@ enum ScanField: CaseIterable {
 /// each field says.
 ///
 /// The camera reads the label many times a second, and any one reading can be wrong: glare turns
-/// QUILLICHEW into QUILLICHI, or text behind the bottle gets read too. So each reading is parsed on its
+/// LISINOPRIL into LISINOPRLL, or text behind the bottle gets read too. So each reading is parsed on its
 /// own and counts as one vote per field, and every field shows the value most readings agree on. A field
 /// turns green once two readings agree, and a later majority can still correct it.
 ///

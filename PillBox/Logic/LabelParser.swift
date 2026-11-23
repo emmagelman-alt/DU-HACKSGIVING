@@ -83,7 +83,7 @@ enum LabelParser {
         }
 
         // Directions: the "TAKE ..." sentence, which can wrap over a few lines. The camera sometimes joins
-        // it to the line beside it ("TAB CHEW 2 TABLETS BY"), so the verb can also start partway along.
+        // it to the line beside it ("TAB TAKE 1 TABLET BY"), so the verb can also start partway along.
         if let directions = findDirections(upperLines) {
             r.directions = sentenceCase(directions)
             r.found.insert("directions")
@@ -114,8 +114,8 @@ enum LabelParser {
     private static let verbs = "TAKE|GIVE|USE|APPLY|INHALE|PLACE|INSTILL|CHEW|DISSOLVE|INJECT|SPRAY|INSERT"
     private static let dosingWords = #"\b(BY MOUTH|ONCE|TWICE|DAILY|TIMES|EVERY|HOURS?|AS NEEDED|BEDTIME|AT NIGHT|NIGHTLY|IN THE MORNING|IN THE EVENING|EACH DAY|PER DAY|WEEKLY)\b"#
 
-    /// "CHEW 2 TABLETS BY / MOUTH ONCE DAILY IN / THE MORNING. MAX / DAILY DOSE: 2" →
-    /// "CHEW 2 TABLETS BY MOUTH ONCE DAILY IN THE MORNING." (the maximum is a limit, not a dose).
+    /// "TAKE 1 TABLET BY / MOUTH TWICE DAILY WITH / FOOD. MAX / DAILY DOSE: 2" →
+    /// "TAKE 1 TABLET BY MOUTH TWICE DAILY WITH FOOD." (the maximum is a limit, not a dose).
     static func findDirections(_ upperLines: [String]) -> String? {
         let atStart = "^(\(verbs))\\b"
         let inside = "\\b(\(verbs))\\s+(\\d|ONE|TWO|THREE|FOUR|HALF|A|AN|AS|BY|EVERY|IN|INTO|ON)\\b"
@@ -462,7 +462,7 @@ enum LabelParser {
                 r.name = k.name; nameLine = b.line - 1
             } else {
                 // Words before the strength ("LISINOPRIL 10 MG TABLET"), or the line above when the
-                // strength starts its own line ("QUILLICHEW ER" / "30 MG CHEW").
+                // strength starts its own line ("METFORMIN ER" / "500 MG TABLET").
                 let before = cleanDrugName(upperLines[b.line].components(separatedBy: .decimalDigits).first ?? "")
                 if before.count >= 3 {
                     r.name = drugCase(before); nameLine = b.line
@@ -493,7 +493,7 @@ enum LabelParser {
             .trimmingCharacters(in: .whitespaces.union(CharacterSet(charactersIn: "-")))
     }
 
-    /// "QUILLICHEW ER" → "Quillichew ER": title case, with release words kept in capitals.
+    /// "METFORMIN ER" → "Metformin ER": title case, with release words kept in capitals.
     static func drugCase(_ s: String) -> String {
         titleCase(s).split(separator: " ").map { w in
             KnownDrugs.suffixes.contains(w.uppercased()) ? w.uppercased() : String(w)
