@@ -25,3 +25,7 @@ set your Team and change the bundle ID
 turn on Developer Mode and trust the developer profile
 allow the permissions
 the free-account limits (the app stops opening after 7 days, and only 3 apps at once)
+
+The first screen tells the user to start the journey, and that is their onboarding. Then they get to the homepage, which has the calendar, and they can switch between days. This is also where they see the four different screen options for the first time.
+
+The Add button is a medication scanner, and so they can upload their medications through that button. The PillBox is where they see everything that they're taking, can check up on the status and the expiration, and contact their provider. The alarm screen shows them what time it is, when they need to take the specific medication, and allows them to mark it as taken. The last screen, the info screen, is where all their personal information is housed in the case that they have a new caregiver or they want to go to doctors or just have more medical info about themselves.
