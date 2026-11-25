@@ -24,6 +24,9 @@ final class ReminderService: NSObject, UNUserNotificationCenterDelegate {
     static let snoozeAction = "SNOOZE"
     /// Minutes after the dose time when backup reminders repeat.
     static let followUps = [5, 10, 15, 20, 30, 45, 60, 90]
+    /// Calendar-day offsets scheduled during one refresh. Kept as a policy value so reminder
+    /// horizon and notification-budget tests can guard this safety-critical behavior.
+    static let scheduledDayOffsets = 0...1
 
     var alarmsAllowed: Bool { AlarmManager.shared.authorizationState == .authorized }
 
@@ -97,7 +100,7 @@ final class ReminderService: NSObject, UNUserNotificationCenterDelegate {
 
         // Doses for today and tomorrow.
         var doseKeys: Set<String> = []
-        for offset in 0...1 {
+        for offset in Self.scheduledDayOffsets {
             let day = Calendar.current.date(byAdding: .day, value: offset, to: now)!
             for slot in Scheduler.slots(on: day, meds: meds) {
                 doseKeys.insert(slot.key)
